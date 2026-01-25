@@ -1,0 +1,42 @@
+{
+    "warning": {
+        "background": "yellow",
+        "foreground": "red"
+    },
+    "groen": {
+        "background": "black",
+        "foreground": "green"
+    },
+    "rood": {
+        "background": "red",
+        "foreground": "black"
+    },
+    "geel": {
+        "background": "yellow",
+        "foreground": "black"
+    },
+    "cyaan": {
+        "background": "black",
+        "foreground": "cyan"
+    },
+    "blauw": {
+        "background": "black",
+        "foreground": "lightblue"
+    },
+    "magenta": {
+        "background": "black",
+        "foreground": "magenta"
+    },
+    "oranje": {
+        "background": "black",
+        "foreground": "orange"
+    },
+    "normal": {
+        "background": "black",
+        "foreground": "white"
+    },
+    "inverse": {
+        "background": "white",
+        "foreground": "black"
+    }
+}

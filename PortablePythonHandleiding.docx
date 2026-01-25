@@ -1,0 +1,46 @@
+# Volledig Portable Python App Bundelen (Windows)
+
+## 1. Structuur
+
+```
+myapp_portable/
+  python_embedded/         ← uitgepakte embeddable Python (bijv. python.exe, python311.zip, etc.)
+  app/                     ← jouw projectcode (app_launcher.py, modules, data, requirements.txt)
+  libs/                    ← hier komen de geïnstalleerde dependencies
+  start.bat                ← batchbestand om te starten
+  build_portable.bat       ← script om alles te bundelen
+```
+
+## 2. start.bat
+
+```bat
+@echo off
+REM Zet PYTHONPATH zodat Python je libs en app kan vinden
+set PYTHONPATH=%~dp0libs;%~dp0app
+REM Start je app met de portable Python
+%~dp0python_embedded\python.exe %~dp0app\app_launcher.py
+```
+
+## 3. build_portable.bat
+
+```bat
+@echo off
+REM Zorg dat python_embedded\python.exe bestaat en pip geïnstalleerd is!
+REM Installeer alle requirements in de libs-map
+%~dp0python_embedded\python.exe -m pip install -r %~dp0app\requirements.txt -t %~dp0libs
+echo Dependencies geïnstalleerd in libs\
+pause
+```
+
+## 4. Stappen voor gebruik
+
+1. Download en pak de embeddable Python uit in python_embedded.
+2. Zet je app-code in de app-map, inclusief requirements.txt.
+3. Voer build_portable.bat uit om alle dependencies in libs te installeren.
+4. Start je app met start.bat.
+
+Nu kun je de hele map myapp_portable kopiëren naar elke Windows-pc en starten zonder Python-installatie!
+
+---
+
+**Vragen? Of wil je een voorbeeld van requirements.txt of uitleg over pip toevoegen aan de embeddable Python? Laat het gerust weten!**

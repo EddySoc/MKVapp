@@ -1,0 +1,13 @@
+{
+    "Exception": "error",
+    "Result": "success",
+    "Warning": "warn",
+    "Failed": "error",
+    "Success": "success",
+    "Frame": "frame",
+    "Label": "label",
+    "Entry": "entry",
+    "Canvas": "canvas",
+    "Menu": "menu",
+    "Text": "text"
+}

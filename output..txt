@@ -1,0 +1,16 @@
+Microsoft Windows [Version 10.0.26200.7462]
+(c) Microsoft Corporation. Alle rechten voorbehouden.
+
+d:\project_root_portable\venv\Scripts>D:\project_root_portable\debug_start_portable.bat
+
+d:\project_root_portable\venv\Scripts>echo [DEBUG] Activeer venv en start app
+[DEBUG] Activeer venv en start app
+
+d:\project_root_portable\venv\Scripts>echo [DEBUG] Start app_launcher.py
+[DEBUG] Start app_launcher.py
+BASEDIR: D:\project_root_portable\
+VENV_DIR: D:\project_root_portable\venv
+[DEBUG] Start app_launcher.py direct met venv-python
+No Python at '"C:\Python\311\python.exe'
+
+d:\project_root_portable\venv\Scripts>

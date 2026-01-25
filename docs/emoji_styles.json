@@ -1,0 +1,18 @@
+{
+  "✅": "Success / Task complete — Config saved, files processed",
+  "❌": "Failure / Error — File not found, invalid config",
+  "⚠️": "Warning / Incomplete state — Missing value, partially loaded data",
+  "🔍": "Inspection / Debug — Log current function, inspecting widgets",
+  "💡": "Hint / Recommendation — Suggested action, fallback explanation",
+  "🛠️": "Dev tool / Manual intervention — Test runner, config editor, tools menu",
+  "📦": "File / Package — Exporting configs, zipping results",
+  "📂": "Folder operation — Scanning directory, setting paths",
+  "🎛️": "UI component adjusted — Theme applied, preview updated",
+  "🌀": "Startup / Loading — App launch, loading config on boot",
+  "📜": "Config log — Printing config data, JSON schema checks",
+  "👁️": "Widget focus change — Track focus, highlight selection",
+  "🧪": "Test-related — Running tests, unit test report",
+  "🚫": "Denied / Disabled — Invalid shortcut, feature not available",
+  "🔁": "Refresh / Reload — Scanned folder, updated listbox",
+  "💾": "Saved — Config or subtitle save confirmed"
+}

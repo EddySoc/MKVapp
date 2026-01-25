@@ -1,0 +1,18 @@
+{
+    "\u2705": "Success / Task complete \u2014 Config saved, files processed",
+    "\u274c": "Failure / Error \u2014 File not found, invalid config",
+    "\u26a0\ufe0f": "Warning / Incomplete state \u2014 Missing value, partially loaded data",
+    "\ud83d\udd0d": "Inspection / Debug \u2014 Log current function, inspecting widgets",
+    "\ud83d\udca1": "Hint / Recommendation \u2014 Suggested action, fallback explanation",
+    "\ud83d\udee0\ufe0f": "Dev tool / Manual intervention \u2014 Test runner, config editor, tools menu",
+    "\ud83d\udce6": "File / Package \u2014 Exporting configs, zipping results",
+    "\ud83d\udcc2": "Folder operation \u2014 Scanning directory, setting paths",
+    "\ud83c\udf9b\ufe0f": "UI component adjusted \u2014 Theme applied, preview updated",
+    "\ud83c\udf00": "Startup / Loading \u2014 App launch, loading config on boot",
+    "\ud83d\udcdc": "Config log \u2014 Printing config data, JSON schema checks",
+    "\ud83d\udc41\ufe0f": "Widget focus change \u2014 Track focus, highlight selection",
+    "\ud83e\uddea": "Test-related \u2014 Running tests, unit test report",
+    "\ud83d\udeab": "Denied / Disabled \u2014 Invalid shortcut, feature not available",
+    "\ud83d\udd01": "Refresh / Reload \u2014 Scanned folder, updated listbox",
+    "\ud83d\udcbe": "Saved \u2014 Config or subtitle save confirmed"
+}
