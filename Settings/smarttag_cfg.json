@@ -1,0 +1,18 @@
+{
+    "success": {
+        "text_color": "green",
+        "icon": "\u2705"
+    },
+    "error": {
+        "text_color": "red",
+        "icon": "\u274c"
+    },
+    "info": {
+        "text_color": "white",
+        "icon": "\u2139\ufe0f"
+    },
+    "warning": {
+        "text_color": "orange",
+        "icon": "\u26a0\ufe0f"
+    }
+}

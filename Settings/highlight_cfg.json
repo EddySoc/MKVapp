@@ -1,0 +1,16 @@
+{
+    "error":     {"foreground": "red", "font": "TkDefaultFont 9 bold"},
+    "success":   {"foreground": "green", "font": "TkDefaultFont 9"},
+    "warn":      {"foreground": "orange", "font": "TkDefaultFont 9 italic"},
+    "frame":     {"foreground": "blue"},
+    "label":     {"foreground": "purple"},
+    "error":     {"foreground": "red", "font": "TkDefaultFont 9 bold"},
+    "success":   {"foreground": "green", "font": "TkDefaultFont 9"},
+    "warn":      {"foreground": "orange", "font": "TkDefaultFont 9 italic"},
+    "frame":     {"foreground": "blue"},
+    "label":     {"foreground": "purple"},
+    "entry":     {"foreground": "teal"},
+    "canvas":    {"foreground": "brown"},
+    "menu":      {"foreground": "darkgreen"},
+    "text":      {"foreground": "black"}
+}

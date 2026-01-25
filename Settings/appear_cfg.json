@@ -1,0 +1,44 @@
+{
+    "themes": [
+        "light",
+        "dark",
+        "high_contrast",
+        "auto"
+    ],
+    "color_schemes": [
+        "blue",
+        "green",
+        "dark-blue"
+    ],
+    "display_modes": [
+        "fullscreen",
+        "windowed",
+        "borderless"
+    ],
+    "font_families": [
+        "Segoe UI",
+        "Arial",
+        "Courier New",
+        "Helvetica",
+        "Consolas"
+    ],
+    "font_styles": [
+        "normal",
+        "italic"
+    ],
+    "font_weights": [
+        "normal",
+        "bold"
+    ],
+    "font_sizes": [
+        "10",
+        "11",
+        "12",
+        "14",
+        "16",
+        "18",
+        "20",
+        "24",
+        "26"
+    ]
+}

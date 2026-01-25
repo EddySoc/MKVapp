@@ -1,0 +1,78 @@
+{
+    "dut": [
+        "nl",
+        "Dutch"
+    ],
+    "eng": [
+        "en",
+        "English"
+    ],
+    "fre": [
+        "fr",
+        "French"
+    ],
+    "ger": [
+        "de",
+        "German"
+    ],
+    "spa": [
+        "es",
+        "Spanish"
+    ],
+    "ita": [
+        "it",
+        "Italian"
+    ],
+    "por": [
+        "pt",
+        "Portuguese"
+    ],
+    "swe": [
+        "sv",
+        "Swedish"
+    ],
+    "nor": [
+        "no",
+        "Norwegian"
+    ],
+    "dan": [
+        "da",
+        "Danish"
+    ],
+    "fin": [
+        "fi",
+        "Finnish"
+    ],
+    "pol": [
+        "pl",
+        "Polish"
+    ],
+    "cze": [
+        "cz",
+        "Czech"
+    ],
+    "slo": [
+        "sl",
+        "Slovenian"
+    ],
+    "hun": [
+        "hu",
+        "Hungarian"
+    ],
+    "rum": [
+        "ro",
+        "Romanian"
+    ],
+    "jpn": [
+        "ja",
+        "Japanese"
+    ],
+    "chi": [
+        "zh",
+        "Chinese"
+    ],
+    "kor": [
+        "ko",
+        "Korean"
+    ]
+}

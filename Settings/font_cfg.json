@@ -1,0 +1,22 @@
+{
+    "default": [
+        "Segoe Script",
+        20,
+        "bold"
+    ],
+    "my_font": [
+        "Arial",
+        14,
+        "bold"
+    ],
+    "tb_font": [
+        "Courier",
+        8,
+        "normal"
+    ],
+    "helv36": [
+        "Helvetica",
+        36,
+        "bold"
+    ]
+}
