@@ -18,7 +18,10 @@ from tkinter import font as tkFont
 import customtkinter as ct
 import queue
 
-from utils.logger_singleton import logger
+# Avoid importing the entire `utils` package at module-import time to prevent
+# triggering package-level side-effects that can cause circular imports.
+import logging
+logger = logging.getLogger("mkvapp")
 # Lazy import: from config.smart_config_manager import config_mgr
 
 # Singleton SharedState for cross-module data sharing
@@ -28,15 +31,13 @@ class SharedState:
     def __init__(self):
         # GUI-independent fields
         self.gui_queue: queue.Queue = queue.Queue()
-        
-        # Lazy load config_mgr when first accessed
-        from config.smart_config_manager import config_mgr
         self.app = None
         self.binding_manager = None
         self.pop_menu = None
         self.all_filterboxes: list = []
 
-        self.config_mgr = config_mgr  # ✅ Use the shared instance
+        # Defer loading the config manager to avoid circular imports during module init
+        self._config_mgr = None
 
         self.last_entry: str = "source"
         self.base_path = None
@@ -88,11 +89,23 @@ class SharedState:
         else:
             print("⚠️ last_entry is missing or invalid")
 
+    @property
+    def config_mgr(self):
+        if getattr(self, '_config_mgr', None) is None:
+            from config.smart_config_manager import config_mgr as _cfg
+            self._config_mgr = _cfg
+        return self._config_mgr
+
+    @config_mgr.setter
+    def config_mgr(self, value):
+        self._config_mgr = value
+
 # Singleton accessor
 def get_shared() -> SharedState:
     if SharedState._instance is None:
         SharedState._instance = SharedState()
     return SharedState._instance
+
 
 # ✅ Public config accessor using config_mgr directly
 def get_config(section=None, key=None, default=None):
