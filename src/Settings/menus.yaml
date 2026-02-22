@@ -1,0 +1,93 @@
+metadata:
+  generated_at: '2026-02-20T18:28:32.129987'
+  source: menu_registry
+  version: 2.0.0
+Menus:
+  tb_info:
+  - label: DiskInfo
+    action: diskinfo
+    icon: 🔍
+  - label: Disk InfoBar
+    action: show_disk_info
+    icon: 🔍
+  videos:
+  - label: Play Video
+    action: play_video
+    icon: ▶️
+  - label: Remove All Subs
+    action: remove_all_subtitles
+    icon: 🗑️
+  - label: Transform -> MKV
+    action: transform_2_mkv
+  - label: Embed Sub
+    action: mkv_embed_sub
+  - label: MKV -> 8 Bit HEVC
+    action: mkv_2_8bitHEVC
+  - label: Check Subs Language
+    action: mkv_check_lang
+  - label: Inspect Video Info
+    action: inspect_video_info
+    icon: 🔍
+  - label: Download Sub
+    action: download_subtitles_for_selected
+    icon: 🔽
+  - label: Extract Subs
+    action: extract_subtitles
+  subtitles:
+  - label: Show SRT File
+    action: show_srt_file
+  - label: Clean & Fix
+    action: clean_and_fix_subtitles
+  - label: Sync Srt
+    action: sub_sync
+  - label: Resync Folder
+    action: subs_resync
+  - label: Check SRT Language
+    action: check_language
+  - label: Translate
+    action: sub_translate
+  help:
+  - label: Show Help
+    action: show_help_dialog
+    icon: ℹ️
+  All:
+  - label: Show LogFile
+    action: show_logfile_all
+    icon: 🔍
+  - label: Show TextFile
+    action: show_textfile_all
+    icon: 🔍
+  lbox:
+  - label: Select All
+    action: select_all_files
+    icon: ☑️
+  - label: Deselect All
+    action: deselect_all_files
+    icon: ☐
+  - label: Delete Files
+    action: delete_selected_files
+    icon: 🧹
+  - label: Reveal Files
+    action: reveal_selected_in_explorer
+    icon: 🧹
+  tb_debug:
+  - label: Menu Dashboard
+    action: launch_menu_dashboard
+    icon: 📋
+  - label: Check Config
+    action: show_config_popup
+    icon: 🔍
+  - label: Bindings Dashboard
+    action: launch_debug_tools
+    icon: 🔗
+  - label: Inspect SharedState
+    action: show_sharedstate_inpector
+    icon: 🔍
+  tb_folders:
+  - label: 🔄 Refresh
+    action: refresh_current_folder
+    icon: 🔄
+  tbox:
+  - label: Clear Textbox
+    action: clear_this_textbox
+    icon: 🧹

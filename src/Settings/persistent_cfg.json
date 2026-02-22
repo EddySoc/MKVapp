@@ -1,0 +1,19 @@
+{
+  "BaseDir": "C:/QBMedia",
+  "source": "C:/QBMedia/Downloads",
+  "target": "C:\\QBMedia\\Media\\Movies",
+  "backup": "C:/QBMedia",
+  "Min_Freespace": 100,
+  "Language": "dut",
+  "Theme": "dark",
+  "Segbut": "Videos",
+  "Display_mode": "windowed",
+  "Color_scheme": "dark-blue",
+  "Font_family": "Segoe UI",
+  "Font_style": "bold",
+  "Font_weight": "bold",
+  "Font_size": "12",
+  "Inc_subdirs": true,
+  "SubtitleMethod": "filebot",
+  "Max_Resolution": "1080p"
+}
