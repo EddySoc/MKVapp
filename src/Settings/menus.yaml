@@ -1,5 +1,5 @@
 metadata:
-  generated_at: '2026-02-20T18:28:32.129987'
+  generated_at: '2026-02-22T13:19:29.143508'
   source: menu_registry
   version: 2.0.0
 Menus:
@@ -76,12 +76,6 @@ Menus:
     icon: 📋
   - label: Check Config
     action: show_config_popup
-    icon: 🔍
-  - label: Bindings Dashboard
-    action: launch_debug_tools
-    icon: 🔗
-  - label: Inspect SharedState
-    action: show_sharedstate_inpector
     icon: 🔍
   tb_folders:
   - label: 🔄 Refresh
