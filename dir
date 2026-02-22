@@ -1,0 +1,18 @@
+ Volume in drive C is System
+ Volume Serial Number is 5EA1-741E
+
+ Directory of C:\Python_W_new\project_root_portable
+
+29/01/2026  12:19    <DIR>          .
+28/01/2026  15:34    <DIR>          ..
+25/01/2026  12:29               171 .gitignore
+25/01/2026  12:53    <DIR>          .vscode
+27/01/2026  14:01    <DIR>          build
+29/01/2026  12:29                 0 dir
+28/01/2026  13:47    <DIR>          dist
+28/01/2026  15:27           145.470 mkv_src_backup.zip
+16/01/2026  15:44               628 output..txt
+29/01/2026  12:01    <DIR>          src
+17/01/2026  12:36    <DIR>          venv
+               4 File(s)        146.269 bytes
+               7 Dir(s)  75.277.373.440 bytes free

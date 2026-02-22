@@ -1,0 +1,20 @@
+
+# Compatibele requirements voor jouw project
+numpy
+thinc==8.3.10
+spacy==3.8.11
+opencv-contrib-python==4.8.1.78
+pillow==9.4.0
+moviepy==2.2.1
+ffsubsync==0.4.31
+auditok==0.1.5
+send2trash
+langdetect
+langcodes
+language_data
+argostranslate
+ctranslate2
+customtkinter
+CTkListbox
+pymediainfo
+pyinstaller
