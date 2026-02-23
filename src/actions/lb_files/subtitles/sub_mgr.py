@@ -528,34 +528,45 @@ def sub_sync():
     # Create output filename
     synchronized_srt = os.path.join(srt_dir, f"{srt_base}.sync.srt")
     
-    try:
-        tb_update('tb_info', f"🔄 Synchronizing {os.path.basename(srt_file)} with {os.path.basename(video_file)}...", "normal")
-        
-        # Use ffsubsync to synchronize
-        import subprocess
-        cmd = [
-            "ffsubsync", 
-            video_file, 
-            "-i", srt_file, 
-            "-o", synchronized_srt
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-        
-        if result.returncode == 0:
-            tb_update('tb_info', f"✅ Synchronization completed: {os.path.basename(synchronized_srt)}", "groen")
-            # Refresh the listbox to show the new synchronized file
-            from utils.scan_helpers import reload
-            reload(s.app)
-        else:
-            tb_update('tb_info', f"❌ Synchronization failed: {result.stderr}", "rood")
-            
-    except FileNotFoundError:
-        tb_update('tb_info', "❌ ffsubsync not found. Please install it: pip install ffsubsync", "rood")
-    except Exception as e:
-        tb_update('tb_info', f"❌ Synchronization failed: {str(e)}", "rood")
-        import traceback
-        traceback.print_exc()
+    import threading
+
+    def worker():
+        status_slot = getattr(s, 'bottomrow_label', None)
+        # show indeterminate progress for single-file sync
+        if status_slot:
+            s.app.after(0, lambda: status_slot.show_progress(mode="indeterminate"))
+
+        try:
+            s.app.after(0, lambda: tb_update('tb_info', f"🔄 Synchronizing {os.path.basename(srt_file)} with {os.path.basename(video_file)}...", "normal"))
+            import subprocess
+            cmd = [
+                "ffsubsync",
+                video_file,
+                "-i", srt_file,
+                "-o", synchronized_srt
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+
+            if result.returncode == 0:
+                s.app.after(0, lambda: tb_update('tb_info', f"✅ Synchronization completed: {os.path.basename(synchronized_srt)}", "groen"))
+                from utils.scan_helpers import reload
+                s.app.after(0, lambda: reload(s.app))
+            else:
+                s.app.after(0, lambda: tb_update('tb_info', f"❌ Synchronization failed: {result.stderr}", "rood"))
+
+        except FileNotFoundError:
+            s.app.after(0, lambda: tb_update('tb_info', "❌ ffsubsync not found. Please install it: pip install ffsubsync", "rood"))
+        except Exception as e:
+            s.app.after(0, lambda: tb_update('tb_info', f"❌ Synchronization failed: {str(e)}", "rood"))
+            import traceback
+            traceback.print_exc()
+        finally:
+            if status_slot:
+                s.app.after(0, lambda: status_slot.reset())
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
 
 def sub_test(fil):
     # ⚠️ TODO: This function needs refactoring - uses undefined variables
@@ -649,58 +660,78 @@ def get_num_subs(fil):
 def subs_resync():
     from shared_data import get_shared
     from utils import log_error
-    
+    import threading
+
     s = get_shared()
-    
+
     # Get the active entry (source, target, or backup)
     last_entry_name = getattr(s, "last_entry_name", "source")
-    
+
     if last_entry_name not in s.entry_data:
         log_error(f"⚠️ Entry '{last_entry_name}' not found")
         tb_update('tb_info', f"⚠️ Entry '{last_entry_name}' not found", "rood")
         return
-    
+
     # Get the path from the active SmartEntry
     entry_obj = s.entry_data[last_entry_name]["entry"]
     input_dir = entry_obj.value
-    
+
     if not input_dir:
         log_error("⚠️ No folder path set in active entry")
         tb_update('tb_info', "⚠️ No folder path set in active entry", "geel")
         return
-    
+
     if not os.path.exists(input_dir):
         log_error(f"⚠️ Folder does not exist: {input_dir}")
         tb_update('tb_info', f"⚠️ Folder does not exist: {input_dir}", "rood")
         return
-    
+
     tb_update('tb_info', f"🔄 Extracting subtitles from: {input_dir}", "groen")
 
     # Process only video files in the directory (not recursive)
     video_extensions = ('.mkv', '.mp4', '.avi', '.mov', '.m4v')
-    video_files = [f for f in os.listdir(input_dir) 
-                   if os.path.isfile(os.path.join(input_dir, f)) 
+    video_files = [f for f in os.listdir(input_dir)
+                   if os.path.isfile(os.path.join(input_dir, f))
                    and f.lower().endswith(video_extensions)]
-    
+
     if not video_files:
         tb_update('tb_info', f"⚠️ No video files found in: {input_dir}", "geel")
         return
-    
-    tb_update('tb_info', f"📹 Found {len(video_files)} video file(s)", "normal")
-    
-    for file in video_files:
-        fil = os.path.join(input_dir, file)
-        tb_update('tb_info', f"Processing: {file}", "normal")
-        sub_extract(fil, add_sync_suffix=True)  # Add .sync suffix for resynced subtitles
-        #mkv_NO_sub(fil)
-        #sub_sync(fil)
-        #mkv_embed_sub(fil)
-    
-    tb_update('tb_info', f"✅ Resync completed for folder: {input_dir}", "groen")
-    
-    # Refresh the listbox to show newly extracted subtitle files
-    from utils.scan_helpers import reload
-    reload(s.app)
+
+    total = len(video_files)
+
+    def worker():
+        # show determinate progress
+        status_slot = getattr(s, 'bottomrow_label', None)
+        if status_slot:
+            s.app.after(0, lambda: status_slot.show_progress(mode="determinate"))
+
+        for idx, file in enumerate(video_files):
+            fil = os.path.join(input_dir, file)
+            # update info textbox on main thread
+            s.app.after(0, lambda f=file: tb_update('tb_info', f"Processing: {f}", "normal"))
+
+            # perform extraction (runs blocking, but in worker thread)
+            try:
+                sub_extract(fil, add_sync_suffix=True)
+            except Exception as e:
+                s.app.after(0, lambda e=e, fn=file: tb_update('tb_info', f"❌ Error processing {fn}: {e}", "rood"))
+
+            # update progress
+            progress = float(idx + 1) / float(total)
+            if status_slot:
+                s.app.after(0, lambda p=progress: status_slot.update_progress(p))
+
+        # finalize
+        if status_slot:
+            s.app.after(0, lambda: status_slot.reset())
+        s.app.after(0, lambda: tb_update('tb_info', f"✅ Resync completed for folder: {input_dir}", "groen"))
+        # Refresh the listbox to show newly extracted subtitle files
+        from utils.scan_helpers import reload
+        s.app.after(0, lambda: reload(s.app))
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
 
 
 # === SUB LANGUAGE RELATED =====================================================

@@ -181,84 +181,85 @@ def remove_all_subtitles():
     video_exts = {".mp4", ".mkv", ".avi", ".mov", ".wmv"}
     
     from utils.text_helpers import tb_update
+    import threading
+
     tb_update('tb_info', f"🗑️ Remove All Subs - {len(selected)} file(s)", "normal")
-    
-    for idx, video_path in enumerate(selected):
-        # Add dotted line between files (not before first)
-        if idx > 0:
-            tb_update('tb_info', "· " * 25, "normal")
-        ext = os.path.splitext(video_path)[1].lower()
-        if ext == '.srt':
-            from utils import update_tbinfo
-            update_tbinfo(f"⚠️ Error: You tried to use an SRT file for a video action: '{os.path.basename(video_path)}'. Please select a valid video file.", "geel")
-            continue
-        if ext not in video_exts:
-            print(f"⏭️ Skipping non-video: {os.path.basename(video_path)}")
-            tb_update('tb_info', f"⏭️ Skipping: {os.path.basename(video_path)}", "normal")
-            continue
-        
-        # Create output filename with _nosubs suffix
-        dir_name = os.path.dirname(video_path)
-        base_name = os.path.splitext(os.path.basename(video_path))[0]
-        output_path = os.path.join(dir_name, f"{base_name}_nosubs{ext}")
-        
-        print(f"🎬 Removing subtitles from: {os.path.basename(video_path)}")
-        tb_update('tb_info', f"🎬 Processing: {os.path.basename(video_path)}", "normal")
-        print(f"📂 Input: {video_path}")
-        print(f"📂 Output: {output_path}")
-        
-        # Use ffmpeg to copy video without subtitle tracks
-        # -map 0 copies all streams, -map -0:s removes all subtitle streams
-        cmd = [
-            ffmpeg_path, "-i", video_path,
-            "-map", "0", "-map", "-0:s",
-            "-c", "copy",
-            "-y",  # Overwrite output file if exists
-            output_path
-        ]
-        
-        print(f"🔧 Running: {' '.join(cmd)}")
-        
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0:
-                print(f"❌ FFmpeg failed with return code {result.returncode}")
-                print(f"stderr: {result.stderr}")
-                tb_update('tb_info', f"❌ FFmpeg error on {os.path.basename(video_path)}", "normal")
+
+    total = len(selected)
+
+    def worker():
+        status_slot = getattr(s, 'bottomrow_label', None)
+        if status_slot:
+            s.app.after(0, lambda: status_slot.show_progress(mode="determinate"))
+
+        for idx, video_path in enumerate(selected):
+            # Add dotted line between files (not before first)
+            if idx > 0:
+                s.app.after(0, lambda: tb_update('tb_info', "· " * 25, "normal"))
+
+            ext = os.path.splitext(video_path)[1].lower()
+            if ext == '.srt':
+                s.app.after(0, lambda vp=video_path: tb_update('tb_info', f"⚠️ Error: You tried to use an SRT file for a video action: '{os.path.basename(vp)}'. Please select a valid video file.", "geel"))
+                continue
+            if ext not in video_exts:
+                s.app.after(0, lambda vp=video_path: tb_update('tb_info', f"⏭️ Skipping: {os.path.basename(vp)}", "normal"))
+                continue
+
+            # Create output filename with _nosubs suffix
+            dir_name = os.path.dirname(video_path)
+            base_name = os.path.splitext(os.path.basename(video_path))[0]
+            output_path = os.path.join(dir_name, f"{base_name}_nosubs{ext}")
+
+            s.app.after(0, lambda vp=video_path: tb_update('tb_info', f"🎬 Processing: {os.path.basename(vp)}", "normal"))
+
+            # Use ffmpeg to copy video without subtitle tracks
+            cmd = [
+                ffmpeg_path, "-i", video_path,
+                "-map", "0", "-map", "-0:s",
+                "-c", "copy",
+                "-y",  # Overwrite output file if exists
+                output_path
+            ]
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True
+                )
+
+                if result.returncode != 0:
+                    s.app.after(0, lambda vp=video_path: tb_update('tb_info', f"❌ FFmpeg error on {os.path.basename(vp)}", "normal"))
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                else:
+                    # replace original
+                    if not os.path.exists(output_path):
+                        s.app.after(0, lambda vp=video_path: tb_update('tb_info', f"❌ Output not created for {os.path.basename(vp)}", "normal"))
+                    else:
+                        os.remove(video_path)
+                        os.rename(output_path, video_path)
+                        s.app.after(0, lambda vp=video_path: tb_update('tb_info', f"✅ Removed subs: {os.path.basename(vp)}", "normal"))
+
+            except Exception as e:
+                s.app.after(0, lambda e=e, vp=video_path: tb_update('tb_info', f"❌ Error: {str(e)}", "normal"))
                 if os.path.exists(output_path):
                     os.remove(output_path)
-                continue
-            
-            print(f"✅ FFmpeg completed successfully")
-            
-            # Check if output file was created
-            if not os.path.exists(output_path):
-                print(f"❌ Output file was not created: {output_path}")
-                tb_update('tb_info', f"❌ Output not created for {os.path.basename(video_path)}", "normal")
-                continue
-            
-            # Replace original file with the new one
-            print(f"🔄 Replacing original with no-subs version...")
-            os.remove(video_path)
-            os.rename(output_path, video_path)
-            
-            print(f"✅ Removed subtitles: {os.path.basename(video_path)}")
-            tb_update('tb_info', f"✅ Removed subs: {os.path.basename(video_path)}", "normal")
-            
-        except Exception as e:
-            print(f"❌ Error processing {os.path.basename(video_path)}: {e}")
-            tb_update('tb_info', f"❌ Error: {str(e)}", "normal")
-            if os.path.exists(output_path):
-                os.remove(output_path)
-    
-    tb_update('tb_info', "· " * 25, "normal")
-    tb_update('tb_info', "✅ Remove All Subs complete", "normal")
-    tb_update('tb_info', "─" * 50, "normal")
+
+            # update progress
+            progress = float(idx + 1) / float(total)
+            if status_slot:
+                s.app.after(0, lambda p=progress: status_slot.update_progress(p))
+
+        # finalize
+        s.app.after(0, lambda: tb_update('tb_info', "· " * 25, "normal"))
+        s.app.after(0, lambda: tb_update('tb_info', "✅ Remove All Subs complete", "normal"))
+        s.app.after(0, lambda: tb_update('tb_info', "─" * 50, "normal"))
+        if status_slot:
+            s.app.after(0, lambda: status_slot.reset())
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
 
 @menu_tag(label="Transform -> MKV", group="videos")
 def transform_2_mkv():

@@ -327,29 +327,41 @@ class BaseTBox(tk.Frame):
                     break
 
         # 🧱 Build full path
-        # First try to use folder_path_map for accurate mapping. Try several
-        # variants: the raw line (including indentation), the stripped line,
-        # and a normalized-space form. This ensures keys created with
-        # indentation in `create_dir_tree` are found.
-        folder_key_raw = line_text
-        folder_key = line_text.strip()
         full_path = None
 
-        if hasattr(s, 'folder_path_map'):
-            # 1) Exact match using raw line (keeps indentation)
-            if folder_key_raw in s.folder_path_map:
-                full_path = s.folder_path_map[folder_key_raw]
-                debug_print(f"✅ Using folder_path_map (raw): '{folder_key_raw}' -> '{full_path}'", "scan")
-            # 2) Fallback: stripped key
-            elif folder_key in s.folder_path_map:
-                full_path = s.folder_path_map[folder_key]
-                debug_print(f"✅ Using folder_path_map (stripped): '{folder_key}' -> '{full_path}'", "scan")
-            else:
-                # 3) Normalized spaces (collapse multiple spaces)
-                norm = ' '.join(folder_key.split())
-                if norm in s.folder_path_map:
-                    full_path = s.folder_path_map[norm]
-                    debug_print(f"✅ Using folder_path_map (normalized): '{norm}' -> '{full_path}'", "scan")
+        # Preferred: resolve by visible line number mapping (unique)
+        try:
+            folder_line_map = getattr(s, 'folder_line_map', None)
+            if folder_line_map:
+                ln = line_number
+                if ln in folder_line_map:
+                    full_path = folder_line_map[ln]
+                    debug_print(f"✅ Using folder_line_map: L{ln} -> '{full_path}'", "scan")
+        except Exception:
+            full_path = None
+
+        # Fallback: try older folder_path_map approach based on display text
+        if not full_path:
+            # First try to use folder_path_map for accurate mapping. Try several
+            # variants: the raw line (including indentation), the stripped line,
+            # and a normalized-space form.
+            folder_key_raw = line_text
+            folder_key = line_text.strip()
+            if hasattr(s, 'folder_path_map'):
+                # 1) Exact match using raw line (keeps indentation)
+                if folder_key_raw in s.folder_path_map:
+                    full_path = s.folder_path_map[folder_key_raw]
+                    debug_print(f"✅ Using folder_path_map (raw): '{folder_key_raw}' -> '{full_path}'", "scan")
+                # 2) Fallback: stripped key
+                elif folder_key in s.folder_path_map:
+                    full_path = s.folder_path_map[folder_key]
+                    debug_print(f"✅ Using folder_path_map (stripped): '{folder_key}' -> '{full_path}'", "scan")
+                else:
+                    # 3) Normalized spaces (collapse multiple spaces)
+                    norm = ' '.join(folder_key.split())
+                    if norm in s.folder_path_map:
+                        full_path = s.folder_path_map[norm]
+                        debug_print(f"✅ Using folder_path_map (normalized): '{norm}' -> '{full_path}'", "scan")
         
         # If no exact match, try to find in actual directory
         if not full_path:
