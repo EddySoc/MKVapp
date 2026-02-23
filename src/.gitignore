@@ -1,0 +1,14 @@
+/.venv/
+venv/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+/.mypy_cache/
+
+# Ignore user-specific settings
+*.swp

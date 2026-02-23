@@ -103,7 +103,9 @@ def go_to_parent_folder():
             return
         base_dir_norm = os.path.normpath(base_dir)
         current_base_norm = os.path.normpath(current_base)
-        parent_path = os.path.dirname(current_base)
+        # Derive parent from the normalized current base to avoid cases where
+        # a trailing slash makes dirname return the same folder.
+        parent_path = os.path.dirname(current_base_norm)
         parent_path_norm = os.path.normpath(parent_path)
 
         print(f"🔍 Current base: '{current_base_norm}'")
