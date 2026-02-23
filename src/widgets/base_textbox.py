@@ -212,7 +212,15 @@ class BaseTBox(tk.Frame):
             debug_print(f"⚠️ Failed to clear textbox: {ex}", "instantie")
 
     def get(self, *args, **kwargs):
-        return self.textbox.get("1.0", "end").strip()
+        # If specific indices are provided, forward them to the internal Text widget.
+        # Otherwise, return the full content (strip trailing newline as before).
+        try:
+            if args or kwargs:
+                return self.textbox.get(*args, **kwargs)
+            return self.textbox.get("1.0", "end").strip()
+        except Exception:
+            # Fallback to previous behavior on any error
+            return self.textbox.get("1.0", "end").strip()
 
     def on_mouse_click(self, event):
         widget = event.widget
@@ -244,8 +252,9 @@ class BaseTBox(tk.Frame):
             debug_print("⚠️ Clicked line is empty or whitespace.", "scan")
             return
 
-        # Check if clicked on [..] parent folder navigation (first line with up arrow)
-        if "[..]" in line_text or (line_text.strip().startswith("⬆️") and line_number == 1):
+        # Check if clicked on parent folder navigation (contains [..] or startswith up-arrow)
+        # Do not require it to be on the first line in case formatting/tags shift indices.
+        if "[..]" in line_text or line_text.lstrip().startswith("⬆️"):
             debug_print("⬆️ Clicked on parent folder navigation", "scan")
             try:
                 from actions.tb_folders.folder_nav import go_to_parent_folder
@@ -318,15 +327,29 @@ class BaseTBox(tk.Frame):
                     break
 
         # 🧱 Build full path
-        # First try to use folder_path_map for accurate mapping
+        # First try to use folder_path_map for accurate mapping. Try several
+        # variants: the raw line (including indentation), the stripped line,
+        # and a normalized-space form. This ensures keys created with
+        # indentation in `create_dir_tree` are found.
+        folder_key_raw = line_text
         folder_key = line_text.strip()
         full_path = None
-        
+
         if hasattr(s, 'folder_path_map'):
-            # Try exact match first
-            if folder_key in s.folder_path_map:
+            # 1) Exact match using raw line (keeps indentation)
+            if folder_key_raw in s.folder_path_map:
+                full_path = s.folder_path_map[folder_key_raw]
+                debug_print(f"✅ Using folder_path_map (raw): '{folder_key_raw}' -> '{full_path}'", "scan")
+            # 2) Fallback: stripped key
+            elif folder_key in s.folder_path_map:
                 full_path = s.folder_path_map[folder_key]
-                debug_print(f"✅ Using folder_path_map (exact): '{folder_key}' -> '{full_path}'", "scan")
+                debug_print(f"✅ Using folder_path_map (stripped): '{folder_key}' -> '{full_path}'", "scan")
+            else:
+                # 3) Normalized spaces (collapse multiple spaces)
+                norm = ' '.join(folder_key.split())
+                if norm in s.folder_path_map:
+                    full_path = s.folder_path_map[norm]
+                    debug_print(f"✅ Using folder_path_map (normalized): '{norm}' -> '{full_path}'", "scan")
         
         # If no exact match, try to find in actual directory
         if not full_path:

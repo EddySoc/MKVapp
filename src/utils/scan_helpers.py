@@ -99,7 +99,9 @@ def create_dir_tree(path, indent=0, is_root=True):
     if not is_root:
         folder_display_name = f"{prefix}📁 {os.path.basename(path)}/"
         s.dirtree_lst.append(folder_display_name)
-        s.folder_path_map[folder_display_name.strip()] = path  # 👈 Add mapping here
+        # Use the full display string (including indentation) as the key so
+        # identical basenames at different tree levels don't collide.
+        s.folder_path_map[folder_display_name] = path
 
     try:
         with os.scandir(path) as entries:
@@ -413,17 +415,18 @@ def update_files_from_selected_folder(event):
     s = get_shared()
     # print("[DEBUG] update_files_from_selected_folder: last_entry_widget type:", type(getattr(s, "last_entry_widget", None)), getattr(s, "last_entry_widget", None))
     try:
-        # Get selected text from tb_folders
-        selected_text = s.app.tb_folders.get("insert linestart", "insert lineend").strip()
-        #print(f"selected_text = {selected_text}")
-        # Extract folder name from formatted text (removes "📁 " if present)
-        selected_folder = selected_text.replace("📁 ", "").strip("/")
-        #print(f"selected_folder = {selected_folder}")
-        # Construct full path based on the selected folder
-        selected_path = os.path.join(s.base_path, selected_folder)
-        #print(f"selected_path = {selected_path}")
-        selected_path = s.base_path  # base_path is already updated to the selected folder
-        if os.path.isdir(selected_path):
+        # Get selected text from tb_folders (preserve leading indentation)
+        selected_text = s.app.tb_folders.get("insert linestart", "insert lineend")
+
+        # Try to resolve the full path using the folder_path_map built during scan.
+        selected_path = s.folder_path_map.get(selected_text)
+
+        # Fallback: try to derive path by stripping the icon and joining with base_path
+        if not selected_path:
+            selected_folder = selected_text.replace("📁 ", "").strip("/\n")
+            selected_path = os.path.join(s.base_path, selected_folder)
+
+        if selected_path and os.path.isdir(selected_path):
             s.app.lb_files.listbox.delete(0, tk.END)  # Clear previous files
             s.files_lst.clear()
 
