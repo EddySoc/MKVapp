@@ -128,4 +128,23 @@ def get_config_value(section, key=None, default=None):
         return default
 
 # Optional: Legacy compatibility - use get_shared() instead
-# shared = get_shared()  # Removed to avoid circular import at module level
+class _SharedProxy:
+    """Compatibility proxy that delegates attribute access to the real
+    SharedState returned by `get_shared()`. This avoids creating the
+    singleton at module import time while keeping the old `shared`
+    variable name available for legacy code (e.g. `from shared_data import shared`).
+    """
+    def __getattr__(self, name):
+        return getattr(get_shared(), name)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(get_shared(), name, value)
+
+    def __dir__(self):
+        return dir(get_shared())
+
+# Provide module-level `shared` name for backward compatibility.
+shared = _SharedProxy()
