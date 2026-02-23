@@ -960,64 +960,73 @@ def sub_translate():
         tb_update('tb_info', f"❌ Translation failed: Missing argostranslate. Install with: pip install argostranslate", "rood")
         return
     
-    # Process all selected SRT files
+    # Process all selected SRT files in a background thread to avoid blocking the GUI
     translated_count = 0
     failed_count = 0
     status_slot = s.bottomrow_label
-    
-    for idx, fil in enumerate(srt_files, 1):
-        try:
-            # Parse the input file
-            file_info = fils(fil)
-            input_dir = file_info.f_path
-            base_name = file_info.f_name
-            
-            # Create output filename with target language
-            output_file = os.path.join(input_dir, f"{base_name}.{target_lang}.srt")
-            
-            # Detect source language from the file
-            detected = lang_detect(fil)
-            source_lang = detected[0]  # Get detected language code
-            if source_lang == "xx":  # No language detected
-                source_lang = "en"  # Default to English
-            
-            # Skip if source and target are the same
-            if source_lang == target_lang:
-                tb_update('tb_info', f"⚠️ {os.path.basename(fil)}: Source and target languages are the same ({source_lang}), skipping...", "geel")
-                continue
-            
-            # Load translation model (will auto-download if needed)
-            tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Preparing {source_lang}→{target_lang} translation for {os.path.basename(fil)}...", "normal")
-            s.app.update_idletasks()
-            
-            translation = load_translation_model(from_code=source_lang, to_code=target_lang)
-            
-            # Show translating message and progress bar
-            tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Translating {os.path.basename(fil)} ({source_lang}→{target_lang})...", "normal")
-            status_slot.show_progress(mode="determinate")
-            
-            # Define progress callback
-            def update_progress(current, total):
-                progress = current / total
-                status_slot.update_progress(progress, f"{current}/{total}")
-                # Force GUI update to show progress in real-time
-                s.app.update_idletasks()
-            
-            # Perform translation with progress updates
-            translate_srt(fil, output_file, translation, progress_callback=update_progress)
-            
-            translated_count += 1
-            
-        except Exception as e:
-            failed_count += 1
-            tb_update('tb_info', f"❌ Failed to translate {os.path.basename(fil)}: {str(e)}", "rood")
-            import traceback
-            traceback.print_exc()
-    
-    # Reset progress bar and show final summary
-    status_slot.reset()
-    if failed_count == 0:
-        tb_update('tb_info', f"✅ Translation completed: {translated_count} file(s) translated successfully", "groen")
+
+    import threading
+
+    def worker():
+        nonlocal translated_count, failed_count
+        for idx, fil in enumerate(srt_files, 1):
+            try:
+                # Parse the input file
+                file_info = fils(fil)
+                input_dir = file_info.f_path
+                base_name = file_info.f_name
+
+                # Create output filename with target language
+                output_file = os.path.join(input_dir, f"{base_name}.{target_lang}.srt")
+
+                # Detect source language from the file
+                detected = lang_detect(fil)
+                source_lang = detected[0]  # Get detected language code
+                if source_lang == "xx":  # No language detected
+                    source_lang = "en"  # Default to English
+
+                # Skip if source and target are the same
+                if source_lang == target_lang:
+                    s.app.after(0, lambda f=fil, sl=source_lang: tb_update('tb_info', f"⚠️ {os.path.basename(f)}: Source and target languages are the same ({sl}), skipping...", "geel"))
+                    continue
+
+                # Load translation model (will auto-download if needed)
+                s.app.after(0, lambda idx=idx, f=fil: tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Preparing translation for {os.path.basename(f)}...", "normal"))
+
+                translation = load_translation_model(from_code=source_lang, to_code=target_lang)
+
+                # Show translating message and progress bar (on main thread)
+                s.app.after(0, lambda idx=idx, f=fil, sl=source_lang, tl=target_lang: tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Translating {os.path.basename(f)} ({sl}→{tl})...", "normal"))
+                if status_slot:
+                    s.app.after(0, lambda: status_slot.show_progress(mode="determinate"))
+
+                # Define progress callback that schedules updates on main thread
+                def update_progress(current, total):
+                    progress = current / total if total else 0
+                    if status_slot:
+                        s.app.after(0, lambda p=progress, cur=current, tot=total: status_slot.update_progress(p, f"{cur}/{tot}"))
+
+                # Perform translation (runs in worker thread)
+                translate_srt(fil, output_file, translation, progress_callback=update_progress)
+
+                translated_count += 1
+
+            except Exception as e:
+                failed_count += 1
+                s.app.after(0, lambda f=fil, e=e: tb_update('tb_info', f"❌ Failed to translate {os.path.basename(f)}: {str(e)}", "rood"))
+                import traceback
+                traceback.print_exc()
+
+        # Reset progress bar and show final summary
+        if status_slot:
+            s.app.after(0, lambda: status_slot.reset())
+        if failed_count == 0:
+            s.app.after(0, lambda: tb_update('tb_info', f"✅ Translation completed: {translated_count} file(s) translated successfully", "groen"))
+        else:
+            s.app.after(0, lambda: tb_update('tb_info', f"⚠️ Translation completed: {translated_count} succeeded, {failed_count} failed", "oranje"))
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
     else:
         tb_update('tb_info', f"⚠️ Translation completed: {translated_count} succeeded, {failed_count} failed", "oranje")
     
