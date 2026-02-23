@@ -1,8 +1,8 @@
 {
   "BaseDir": "C:/QBMedia",
-  "source": "C:\\QBMedia\\Done\\Book of Secrets - Aliens, Ghosts and Ancient Mysteries (2022) 1080p WEBRip x265 An0mal1",
-  "target": "C:\\QBMedia\\Media\\Movies",
-  "backup": "E:/Films.nieuw\\Out Of Darkness (2022)",
+  "source": "C:\\QBMedia\\Done\\test\\",
+  "target": "C:\\QBMedia\\Done\\",
+  "backup": "C:/QBMedia",
   "Min_Freespace": 100,
   "Language": "dut",
   "Theme": "dark",

@@ -60,6 +60,8 @@ def fast_scandir(app,path):
 
     app.file_path_map = {}
     s.folder_path_map = {}
+    # Ordered list of (display_string, full_path) for building line->path mapping
+    s.dirtree_entries = []
 
     create_dir_tree(path)
 
@@ -99,9 +101,10 @@ def create_dir_tree(path, indent=0, is_root=True):
     if not is_root:
         folder_display_name = f"{prefix}📁 {os.path.basename(path)}/"
         s.dirtree_lst.append(folder_display_name)
-        # Use the full display string (including indentation) as the key so
-        # identical basenames at different tree levels don't collide.
-        s.folder_path_map[folder_display_name] = path
+        # Keep an ordered list of entries (display, path). We will build a
+        # reliable line->path mapping after rendering the textbox so that
+        # identical basenames at the same indentation do not collide.
+        s.dirtree_entries.append((folder_display_name, path))
 
     try:
         with os.scandir(path) as entries:
@@ -215,6 +218,20 @@ def update_tb(app):
     
     tb.clear_textbox()
     tb.update_content(msg)
+    # Build a stable mapping from visible line numbers to full paths.
+    # The first line is the parent navigation entry; subsequent lines map
+    # directly to the ordered `s.dirtree_entries` we collected during scan.
+    try:
+        s.folder_line_map = {}
+        # line numbering in the Text widget starts at 1
+        line_num = 1
+        # parent navigation occupies the first line
+        line_num += 1
+        for display, fullpath in s.dirtree_entries:
+            s.folder_line_map[line_num] = fullpath
+            line_num += 1
+    except Exception:
+        s.folder_line_map = {}
 
 def update_lb(app):
     from shared_data import get_shared
@@ -415,14 +432,18 @@ def update_files_from_selected_folder(event):
     s = get_shared()
     # print("[DEBUG] update_files_from_selected_folder: last_entry_widget type:", type(getattr(s, "last_entry_widget", None)), getattr(s, "last_entry_widget", None))
     try:
-        # Get selected text from tb_folders (preserve leading indentation)
-        selected_text = s.app.tb_folders.get("insert linestart", "insert lineend")
+        # Get the line number of the insert cursor to uniquely identify the
+        # clicked line. This avoids collisions for identical basenames.
+        tb = s.app.tb_folders.textbox
+        insert_index = tb.index("insert")
+        line_number = int(insert_index.split(".")[0])
 
-        # Try to resolve the full path using the folder_path_map built during scan.
-        selected_path = s.folder_path_map.get(selected_text)
+        # Resolve via the line->path mapping created in update_tb
+        selected_path = getattr(s, 'folder_line_map', {}).get(line_number)
 
-        # Fallback: try to derive path by stripping the icon and joining with base_path
+        # Fallback: derive path from the visible text if mapping isn't available
         if not selected_path:
+            selected_text = s.app.tb_folders.get("insert linestart", "insert lineend")
             selected_folder = selected_text.replace("📁 ", "").strip("/\n")
             selected_path = os.path.join(s.base_path, selected_folder)
 
