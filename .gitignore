@@ -19,3 +19,8 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Local auth and config backups
+.env
+config_backup.json
+src/Settings/API_cfg.local.json
