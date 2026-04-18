@@ -485,88 +485,115 @@ def subs_rename():
 
 @menu_tag(label="Sync Srt", group="subtitles")
 def sub_sync():
-    """Synchronize subtitle with video"""
+    """Synchronize subtitle with video — supports multiple video+SRT pairs."""
     from shared_data import get_shared
     s = get_shared()
 
-    # Get selected files
     selected = s.app.lb_files.get_selected_file_paths() if hasattr(s.app, 'lb_files') else []
-    print(f"DEBUG: Selected files: {[os.path.basename(f) for f in selected]}")  # Debug info
-    
-    # Filter for SRT and video files
-    srt_files = [f for f in selected if f.lower().endswith('.srt')]
-    video_files = [f for f in selected if f.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v', '.mov', '.wmv', '.flv', '.webm'))]
-    
-    print(f"DEBUG: Found SRT files: {[os.path.basename(f) for f in srt_files]}")  # Debug info
-    print(f"DEBUG: Found video files: {[os.path.basename(f) for f in video_files]}")  # Debug info
-    
+
+    srt_files   = [f for f in selected if f.lower().endswith('.srt')]
+    video_files = [f for f in selected if f.lower().endswith(
+        ('.mp4', '.mkv', '.avi', '.m4v', '.mov', '.wmv', '.flv', '.webm'))]
+
     if not srt_files:
         tb_update('tb_info', "⚠️ No SRT subtitle file selected for synchronization.", "geel")
         return
-    
     if not video_files:
         tb_update('tb_info', "⚠️ No video file selected for synchronization.", "geel")
         return
-    
-    if len(srt_files) > 1:
-        tb_update('tb_info', "⚠️ Please select only one SRT file for synchronization.", "geel")
+
+    # Build pairs: match each SRT to a video by base name prefix
+    def _match_srt_to_video(srt_path, videos):
+        srt_base = os.path.splitext(os.path.basename(srt_path))[0].lower()
+        # strip extra extensions like .nl, .sync, etc.
+        for vid in videos:
+            vid_base = os.path.splitext(os.path.basename(vid))[0].lower()
+            if srt_base.startswith(vid_base):
+                return vid
+        # fallback: if only one video, pair it regardless
+        if len(videos) == 1:
+            return videos[0]
+        return None
+
+    pairs = []
+    for srt in srt_files:
+        vid = _match_srt_to_video(srt, video_files)
+        if vid:
+            pairs.append((vid, srt))
+        else:
+            tb_update('tb_info', f"⚠️ Geen video gevonden voor: {os.path.basename(srt)}", "geel")
+
+    if not pairs:
+        tb_update('tb_info', "⚠️ Geen overeenkomende video/SRT-paren gevonden voor synchronisatie.", "geel")
         return
-    
-    if len(video_files) > 1:
-        tb_update('tb_info', "⚠️ Please select only one video file for synchronization.", "geel")
-        return
-    
-    srt_file = srt_files[0]
-    video_file = video_files[0]
-    
-    # Parse the SRT file path
-    from utils.shared_utils import fils
-    srt_info = fils(srt_file)
-    srt_dir = srt_info.f_path
-    srt_base = srt_info.f_name
-    
-    # Create output filename
-    synchronized_srt = os.path.join(srt_dir, f"{srt_base}.sync.srt")
-    
+
     import threading
 
     def worker():
         status_slot = getattr(s, 'bottomrow_label', None)
-        # show indeterminate progress for single-file sync
+        s.batch_step_done = False
         if status_slot:
             s.app.after(0, lambda: status_slot.show_progress(mode="indeterminate"))
 
-        try:
-            s.app.after(0, lambda: tb_update('tb_info', f"🔄 Synchronizing {os.path.basename(srt_file)} with {os.path.basename(video_file)}...", "normal"))
-            import subprocess
-            cmd = [
-                "ffsubsync",
-                video_file,
-                "-i", srt_file,
-                "-o", synchronized_srt
-            ]
+        import subprocess, sys as _sys, re as _re
+        from utils.shared_utils import fils
+        from utils.scan_helpers import reload
 
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+        # Use ffsubsync from venv Scripts dir so it works without PATH activation
+        _scripts = os.path.dirname(_sys.executable)
+        _ffsubsync = os.path.join(_scripts, "ffsubsync.exe" if os.name == 'nt' else "ffsubsync")
+        if not os.path.exists(_ffsubsync):
+            _ffsubsync = "ffsubsync"  # fallback to PATH
 
-            if result.returncode == 0:
-                s.app.after(0, lambda: tb_update('tb_info', f"✅ Synchronization completed: {os.path.basename(synchronized_srt)}", "groen"))
-                from utils.scan_helpers import reload
-                s.app.after(0, lambda: reload(s.app))
-            else:
-                s.app.after(0, lambda: tb_update('tb_info', f"❌ Synchronization failed: {result.stderr}", "rood"))
+        _known_suffixes = r'(\.(en|nl|fr|de|es|it|pt|ja|zh|und|eng|dut|fre|ger|spa|ita|por|sync|tmp))+$'
 
-        except FileNotFoundError:
-            s.app.after(0, lambda: tb_update('tb_info', "❌ ffsubsync not found. Please install it: pip install ffsubsync", "rood"))
-        except Exception as e:
-            s.app.after(0, lambda: tb_update('tb_info', f"❌ Synchronization failed: {str(e)}", "rood"))
-            import traceback
-            traceback.print_exc()
-        finally:
-            if status_slot:
-                s.app.after(0, lambda: status_slot.reset())
+        for idx, (video_file, srt_file) in enumerate(pairs):
+            if idx > 0:
+                s.app.after(0, lambda: tb_update('tb_info', "· " * 25, "normal"))
+            srt_info = fils(srt_file)
+            # Strip lang/processing suffixes so output is "Movie.nl.sync.srt" not "Movie.en.nl.sync.srt"
+            clean_base = _re.sub(_known_suffixes, '', srt_info.f_name, flags=_re.IGNORECASE)
+            # Preserve the language tag from the input SRT (e.g. .nl)
+            lang_match = _re.search(r'\.(nl|en|fr|de|es|it|pt|ja|zh|und|eng|dut|fre|ger|spa|ita|por)(?=(\.|$))', srt_info.f_name, _re.IGNORECASE)
+            lang_tag = lang_match.group(1) if lang_match else ""
+            suffix = f".{lang_tag}" if lang_tag else ""
+            synchronized_srt = os.path.join(srt_info.f_path, f"{clean_base}{suffix}.sync.srt")
 
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
+            s.app.after(0, lambda v=video_file, sr=srt_file: tb_update(
+                'tb_info',
+                f"🔄 Synchronizing {os.path.basename(sr)} with {os.path.basename(v)}...",
+                "normal"))
+            try:
+                # ffsubsync.exe has a DLL issue on this system — invoke via Python import instead
+                cmd = [
+                    _sys.executable, "-c",
+                    f"import sys; sys.argv=['ffsubsync',{repr(video_file)},'-i',{repr(srt_file)},'-o',{repr(synchronized_srt)}]; from ffsubsync.ffsubsync import main; main()"
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+                if result.returncode == 0:
+                    s.app.after(0, lambda out=synchronized_srt: tb_update(
+                        'tb_info', f"✅ Synchronized: {os.path.basename(out)}", "groen"))
+                else:
+                    err_msg = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+                    s.app.after(0, lambda e=err_msg: tb_update(
+                        'tb_info', f"❌ Sync failed: {e}", "rood"))
+                    print(f"[SYNC stderr] {err_msg}")
+            except ImportError:
+                s.app.after(0, lambda: tb_update(
+                    'tb_info', "❌ ffsubsync niet gevonden. Installeer met: pip install ffsubsync", "rood"))
+                break
+            except Exception as e:
+                s.app.after(0, lambda ex=e: tb_update(
+                    'tb_info', f"❌ Sync error: {ex}", "rood"))
+
+        if status_slot:
+            s.app.after(0, lambda: status_slot.reset())
+        def _reload_then_done():
+            reload(s.app)
+            s.app.after(200, lambda: setattr(s, 'batch_step_done', True))
+        s.app.after(0, _reload_then_done)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 def sub_test(fil):
     # ⚠️ TODO: This function needs refactoring - uses undefined variables
@@ -703,6 +730,7 @@ def subs_resync():
     def worker():
         # show determinate progress
         status_slot = getattr(s, 'bottomrow_label', None)
+        s.batch_step_done = False  # signal: async step in progress
         if status_slot:
             s.app.after(0, lambda: status_slot.show_progress(mode="determinate"))
 
@@ -729,6 +757,7 @@ def subs_resync():
         # Refresh the listbox to show newly extracted subtitle files
         from utils.scan_helpers import reload
         s.app.after(0, lambda: reload(s.app))
+        s.app.after(0, lambda: setattr(s, 'batch_step_done', True))
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
@@ -811,16 +840,19 @@ def lang_detect(fil):
     import re
 
     # Read all lines and collect text lines (skip numbers, timecodes, empty lines)
-    try:
-        with open(fil, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-    except:
-        # Try with different encoding
+    # Try multiple encodings in order
+    lines = None
+    for encoding in ['utf-8-sig', 'utf-8', 'utf-16', 'latin-1', 'cp1252']:
         try:
-            with open(fil, 'r', encoding='latin-1') as f:
+            with open(fil, 'r', encoding=encoding) as f:
                 lines = f.readlines()
-        except:
-            return "xx", "xxx", "No Language", 0.0, "Could not read file"
+            print(f"✓ Successfully read file with encoding: {encoding}")
+            break
+        except Exception as e:
+            continue
+    
+    if lines is None:
+        return "xx", "xxx", "No Language", 0.0, "Could not read file with any encoding"
     
     # Filter for actual subtitle text (not numbers, not timecodes, not empty)
     text_lines = []
@@ -945,7 +977,7 @@ def sub_translate():
     # Get target language from config
     try:
         config_mgr = get_config_manager()
-        target_lang = config_mgr.get["Language"]  # e.g., "nl", "en", etc.
+        target_lang = config_mgr.get["Language"]  # e.g., "nl", "eng", "dut", etc.
         if not target_lang:
             target_lang = "nl"  # default to Dutch
     except:
@@ -955,7 +987,7 @@ def sub_translate():
     try:
         import argostranslate.translate
         import argostranslate.package
-        from .translate_srt_argos import load_translation_model, translate_srt
+        from .translate_srt_argos import load_translation_model, translate_srt, normalize_language_code
     except ImportError as e:
         tb_update('tb_info', f"❌ Translation failed: Missing argostranslate. Install with: pip install argostranslate", "rood")
         return
@@ -969,36 +1001,52 @@ def sub_translate():
 
     def worker():
         nonlocal translated_count, failed_count
+        s.batch_step_done = False  # signal: async step in progress
         for idx, fil in enumerate(srt_files, 1):
             try:
                 # Parse the input file
                 file_info = fils(fil)
                 input_dir = file_info.f_path
-                base_name = file_info.f_name
+                raw_name = file_info.f_name  # e.g. "Movie.en" or "Movie.en.sync"
 
-                # Create output filename with target language
-                output_file = os.path.join(input_dir, f"{base_name}.{target_lang}.srt")
+                # Strip any trailing language/processing suffixes so output is "Movie.nl.srt"
+                # not "Movie.en.nl.srt" or "Movie.en.sync.nl.srt"
+                import re as _re
+                _known_suffixes = r'(\.(en|nl|fr|de|es|it|pt|ja|zh|ko|sv|no|da|fi|pl|cs|sk|hu|ro|und|eng|dut|nld|fre|fra|ger|deu|spa|ita|por|jpn|chi|zho|kor|swe|nor|dan|fin|pol|cze|ces|slo|slk|hun|rum|ron|sync|tmp))+$'
+                clean_name = _re.sub(_known_suffixes, '', raw_name, flags=_re.IGNORECASE)
+
+                normalized_target_lang = normalize_language_code(target_lang, default='nl')
+
+                # Create output filename with normalized target language
+                output_file = os.path.join(input_dir, f"{clean_name}.{normalized_target_lang}.srt")
 
                 # Detect source language from the file
                 detected = lang_detect(fil)
-                source_lang = detected[0]  # Get detected language code
+                source_lang = normalize_language_code(detected[0], default='en')  # Get detected language code
                 if source_lang == "xx":  # No language detected
                     source_lang = "en"  # Default to English
 
                 # Skip if source and target are the same
-                if source_lang == target_lang:
+                if source_lang == normalized_target_lang:
                     s.app.after(0, lambda f=fil, sl=source_lang: tb_update('tb_info', f"⚠️ {os.path.basename(f)}: Source and target languages are the same ({sl}), skipping...", "geel"))
                     continue
 
                 # Load translation model (will auto-download if needed)
                 s.app.after(0, lambda idx=idx, f=fil: tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Preparing translation for {os.path.basename(f)}...", "normal"))
+                # DEBUG: mark start of model load
+                s.app.after(0, lambda: tb_update('tb_info', "ℹ️ Loading translation model (this may take a while)...", "normal"))
 
-                translation = load_translation_model(from_code=source_lang, to_code=target_lang)
+                try:
+                    translation = load_translation_model(from_code=source_lang, to_code=normalized_target_lang)
+                except Exception as e:
+                    s.app.after(0, lambda e=e: tb_update('tb_info', f"❌ Failed to load translation model: {e}", "rood"))
+                    failed_count += 1
+                    continue
 
                 # Show translating message and progress bar (on main thread)
-                s.app.after(0, lambda idx=idx, f=fil, sl=source_lang, tl=target_lang: tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Translating {os.path.basename(f)} ({sl}→{tl})...", "normal"))
+                s.app.after(0, lambda idx=idx, f=fil, sl=source_lang, tl=normalized_target_lang: tb_update('tb_info', f"🔄 [{idx}/{len(srt_files)}] Translating {os.path.basename(f)} ({sl}→{tl})...", "normal"))
                 if status_slot:
-                    s.app.after(0, lambda: status_slot.show_progress(mode="determinate"))
+                    s.app.after(0, lambda: (status_slot.show_progress(mode="determinate"), status_slot.update_progress(0, "0%")))
 
                 # Define progress callback that schedules updates on main thread
                 def update_progress(current, total):
@@ -1007,7 +1055,10 @@ def sub_translate():
                         s.app.after(0, lambda p=progress, cur=current, tot=total: status_slot.update_progress(p, f"{cur}/{tot}"))
 
                 # Perform translation (runs in worker thread)
-                translate_srt(fil, output_file, translation, progress_callback=update_progress)
+                try:
+                    translate_srt(fil, output_file, translation, progress_callback=update_progress)
+                except Exception as te:
+                    raise
 
                 translated_count += 1
 
@@ -1025,11 +1076,12 @@ def sub_translate():
         else:
             s.app.after(0, lambda: tb_update('tb_info', f"⚠️ Translation completed: {translated_count} succeeded, {failed_count} failed", "oranje"))
 
+        # Refresh the listbox to show newly translated files, then signal batch done
+        from utils.scan_helpers import reload
+        def _reload_then_done():
+            reload(s.app)
+            s.app.after(200, lambda: setattr(s, 'batch_step_done', True))
+        s.app.after(0, _reload_then_done)
+
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
-    else:
-        tb_update('tb_info', f"⚠️ Translation completed: {translated_count} succeeded, {failed_count} failed", "oranje")
-    
-    # Refresh the listbox to show newly translated files
-    from utils.scan_helpers import reload
-    reload(s.app)
