@@ -5,9 +5,12 @@ Graphical interface for building portable executable with PyInstaller
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+import json
 import os
+import shutil
 import sys
 import subprocess
+import re
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
@@ -32,21 +35,161 @@ class BuildGUI(ctk.CTk):
         self.console_mode = ctk.BooleanVar(value=False)
         self.upx_compression = ctk.BooleanVar(value=True)
         self.clean_build = ctk.BooleanVar(value=True)
+        self.build_mode = ctk.StringVar(value="Single EXE (portable)")
         self.icon_path = ctk.StringVar(value="")
         
         self.source_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Load persistent settings
+        self.settings_file = os.path.join(self.source_dir, "Settings", "build_backup_cfg.json")
+        self.legacy_settings_file = os.path.join(self.source_dir, "Settings", "persistent_cfg.json")
+        self.load_settings()
         self.is_building = False
         self.progress_dots = 0
         self.progress_animation_id = None
         
         # Queue for log messages from build thread
         self.log_queue = queue.Queue()
+        self._session_log_lines = []
+        self._build_log_file_path = None
         
         # Build UI
         self.create_widgets()
         
         # Start queue processor
         self.process_log_queue()
+
+    def load_settings(self):
+        """Load persistent settings"""
+        try:
+            settings = {}
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+
+            build_settings = settings.get('build', {}) if isinstance(settings, dict) else {}
+
+            if not build_settings and os.path.exists(self.legacy_settings_file):
+                with open(self.legacy_settings_file, 'r', encoding='utf-8') as f:
+                    legacy = json.load(f)
+                build_settings = {
+                    'BuildIcon': legacy.get('BuildIcon', ''),
+                    'BuildOutputDir': legacy.get('BuildOutputDir', self.output_dir.get()),
+                    'BuildConsoleMode': legacy.get('BuildConsoleMode', self.console_mode.get()),
+                    'BuildUpxCompression': legacy.get('BuildUpxCompression', self.upx_compression.get()),
+                    'BuildCleanBuild': legacy.get('BuildCleanBuild', self.clean_build.get()),
+                    'BuildMode': legacy.get('BuildMode', self.build_mode.get()),
+                }
+
+            if 'BuildIcon' in build_settings:
+                self.icon_path.set(build_settings['BuildIcon'])
+            if 'BuildOutputDir' in build_settings:
+                self.output_dir.set(build_settings['BuildOutputDir'])
+            if 'BuildConsoleMode' in build_settings:
+                self.console_mode.set(bool(build_settings['BuildConsoleMode']))
+            if 'BuildUpxCompression' in build_settings:
+                self.upx_compression.set(bool(build_settings['BuildUpxCompression']))
+            if 'BuildCleanBuild' in build_settings:
+                self.clean_build.set(bool(build_settings['BuildCleanBuild']))
+            if 'BuildMode' in build_settings and build_settings['BuildMode']:
+                self.build_mode.set(build_settings['BuildMode'])
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+
+    def save_settings(self):
+        """Save persistent settings"""
+        try:
+            settings = {}
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+
+            if not isinstance(settings, dict):
+                settings = {}
+
+            settings.setdefault('backup', {})
+            settings['build'] = {
+                'BuildIcon': self.icon_path.get(),
+                'BuildOutputDir': self.output_dir.get(),
+                'BuildConsoleMode': self.console_mode.get(),
+                'BuildUpxCompression': self.upx_compression.get(),
+                'BuildCleanBuild': self.clean_build.get(),
+                'BuildMode': self.build_mode.get(),
+            }
+
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+
+    def _apply_spec_overrides(self, spec_file):
+        """Apply temporary overrides to MKVApp.spec based on GUI options."""
+        with open(spec_file, 'r', encoding='utf-8') as f:
+            original = f.read()
+
+        updated = original
+        requested_upx = self.upx_compression.get()
+        upx_path = shutil.which("upx")
+        upx_available = bool(upx_path)
+        effective_upx = requested_upx and upx_available
+
+        if requested_upx and not upx_available:
+            self.log("⚠️ UPX requested but 'upx' was not found in PATH. Building without UPX compression.")
+        elif effective_upx:
+            self.log(f"✅ UPX found: {upx_path}")
+
+        self._effective_upx = effective_upx
+        self._effective_console = self.console_mode.get()
+
+        updated = re.sub(r"(?m)^\s*upx\s*=\s*(True|False)\s*,\s*$", f"    upx={effective_upx},", updated, count=1)
+        updated = re.sub(r"(?m)^\s*console\s*=\s*(True|False)\s*,\s*$", f"    console={self.console_mode.get()},", updated, count=1)
+
+        icon_file = self.icon_path.get().strip()
+        has_valid_icon = bool(icon_file and os.path.isfile(icon_file))
+        icon_line_re = r"(?m)^\s*icon\s*=.*?,\s*$"
+        self._effective_icon = icon_file if has_valid_icon else "None"
+
+        if icon_file and not has_valid_icon:
+            self.log(f"⚠️ Icon file not found: {icon_file}. Building without custom icon.")
+
+        if has_valid_icon:
+            icon_line = f"    icon={repr(icon_file)},"
+            if re.search(icon_line_re, updated):
+                updated = re.sub(icon_line_re, icon_line, updated, count=1)
+            else:
+                updated = re.sub(r"(?m)^(\s*name\s*=\s*'MKVApp'\s*,\s*)$", r"\1\n" + icon_line, updated, count=1)
+        else:
+            updated = re.sub(icon_line_re + r"\n?", "", updated, count=1)
+
+        if updated != original:
+            with open(spec_file, 'w', encoding='utf-8') as f:
+                f.write(updated)
+
+        return original
+
+    def _restore_spec(self, spec_file, original_content):
+        if original_content is None:
+            return
+        with open(spec_file, 'w', encoding='utf-8') as f:
+            f.write(original_content)
+
+    def _is_onedir_mode(self):
+        return self.build_mode.get().startswith("Fast Onedir")
+
+    def _get_spec_file_path(self):
+        spec_name = "MKVApp_onedir.spec" if self._is_onedir_mode() else "MKVApp.spec"
+        return os.path.join(self.source_dir, spec_name)
+
+    def _calculate_directory_size_mb(self, directory):
+        total = 0
+        for root, _, files in os.walk(directory):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                try:
+                    total += os.path.getsize(file_path)
+                except OSError:
+                    pass
+        return total / (1024 * 1024)
 
     def create_widgets(self):
         # Main container with padding
@@ -129,6 +272,26 @@ class BuildGUI(ctk.CTk):
             font=ctk.CTkFont(size=12)
         )
         clean_check.pack(anchor="w", padx=15, pady=5)
+
+        # Build mode selector
+        mode_frame = ctk.CTkFrame(options_frame, fg_color="transparent")
+        mode_frame.pack(fill="x", padx=15, pady=(8, 5))
+
+        mode_label = ctk.CTkLabel(
+            mode_frame,
+            text="Build Type:",
+            font=ctk.CTkFont(size=12)
+        )
+        mode_label.pack(side="left", padx=(0, 10))
+
+        mode_menu = ctk.CTkOptionMenu(
+            mode_frame,
+            values=["Single EXE (portable)", "Fast Onedir (faster startup)"],
+            variable=self.build_mode,
+            width=260,
+            height=30
+        )
+        mode_menu.pack(side="left")
         
         # Icon file (optional)
         icon_frame = ctk.CTkFrame(options_frame, fg_color="transparent")
@@ -170,7 +333,7 @@ class BuildGUI(ctk.CTk):
         )
         info_label.pack(anchor="w", padx=15, pady=(15, 10))
         
-        build_info = """✅ Single-file executable (MKVApp.exe)
+        build_info = """✅ Selectable build mode (Single EXE or Fast Onedir)
 ✅ Settings folder with all configurations
 ✅ Start_MKVApp.bat launcher
 ✅ README.txt with instructions
@@ -272,6 +435,13 @@ class BuildGUI(ctk.CTk):
     def log(self, message, tag="info"):
         """Add message to log via queue (thread-safe)"""
         self.log_queue.put((message, tag))
+
+    def _attach_build_log_file(self, build_dir):
+        """Attach a logfile in build folder and write all accumulated session logs."""
+        log_file_path = os.path.join(build_dir, "build_log.txt")
+        with open(log_file_path, 'w', encoding='utf-8') as f:
+            f.writelines(self._session_log_lines)
+        self._build_log_file_path = log_file_path
     
     def process_log_queue(self):
         """Process queued log messages (runs in main thread)"""
@@ -279,10 +449,22 @@ class BuildGUI(ctk.CTk):
             while True:
                 message, tag = self.log_queue.get_nowait()
                 timestamp = datetime.now().strftime("%H:%M:%S")
+                log_line = f"[{timestamp}] {message}\n"
                 
                 # Add to log
-                self.log_text.insert("end", f"[{timestamp}] {message}\n")
+                self.log_text.insert("end", log_line)
                 self.log_text.see("end")
+
+                # Keep an in-memory copy for this build session
+                self._session_log_lines.append(log_line)
+
+                # Mirror log lines to file when build output folder is known
+                if self._build_log_file_path:
+                    try:
+                        with open(self._build_log_file_path, 'a', encoding='utf-8') as f:
+                            f.write(log_line)
+                    except Exception:
+                        pass
                 
         except queue.Empty:
             pass
@@ -299,6 +481,13 @@ class BuildGUI(ctk.CTk):
         if self.is_building:
             messagebox.showwarning("Build in Progress", "A build is already running!")
             return
+        
+        # Save settings
+        self.save_settings()
+
+        # Reset current build log storage
+        self._session_log_lines = []
+        self._build_log_file_path = None
         
         # Validate output directory
         output_path = self.output_dir.get()
@@ -345,10 +534,20 @@ class BuildGUI(ctk.CTk):
     
     def _build_worker(self):
         """Worker thread for build process"""
+        original_spec_content = None
+        spec_file = self._get_spec_file_path()
         try:
             # Step 1: PyInstaller build
             self.log("📦 Step 1/3: Building executable with PyInstaller...")
             self.update_status("Building executable...")
+
+            # Apply temporary spec overrides from GUI options
+            original_spec_content = self._apply_spec_overrides(spec_file)
+
+            self.log(
+                f"⚙️ Effective options: console={self._effective_console} | upx={self._effective_upx} | icon={self._effective_icon}"
+            )
+            self.log(f"🧩 Build mode: {self.build_mode.get()} | spec={os.path.basename(spec_file)}")
             
             # Build PyInstaller command
             cmd = ["pyinstaller"]
@@ -357,7 +556,6 @@ class BuildGUI(ctk.CTk):
                 cmd.append("--clean")
             
             # Use spec file
-            spec_file = os.path.join(self.source_dir, "MKVApp.spec")
             cmd.append(spec_file)
             
             self.log(f"Running: {' '.join(cmd)}")
@@ -393,14 +591,27 @@ class BuildGUI(ctk.CTk):
             output_dir = self.output_dir.get()
             
             # Create output directory
+<<<<<<< Updated upstream
             if os.path.exists(output_dir):
                 self.log(f"Removing existing directory: {output_dir}")
                 import shutil
                 shutil.rmtree(output_dir)
+=======
+            if os.path.exists(dated_output):
+                self.log(f"Removing existing directory: {dated_output}")
+                shutil.rmtree(dated_output)
+            os.makedirs(dated_output)
+
+            # Attach file logger now that build output folder exists
+            self._attach_build_log_file(dated_output)
+
+            self.log(f"Created dated directory: {dated_output}")
+>>>>>>> Stashed changes
             
             os.makedirs(output_dir)
             self.log(f"Created directory: {output_dir}")
             
+<<<<<<< Updated upstream
             # Copy executable
             exe_source = os.path.join(self.source_dir, "dist", "MKVApp.exe")
             exe_dest = os.path.join(output_dir, "MKVApp.exe")
@@ -411,6 +622,31 @@ class BuildGUI(ctk.CTk):
             import shutil
             shutil.copy2(exe_source, exe_dest)
             self.log(f"✅ Copied: MKVApp.exe")
+=======
+            if os.path.exists(build_source):
+                shutil.move(build_source, os.path.join(dated_output, "build"))
+                self.log("✅ Moved: build folder")
+            
+            if os.path.exists(dist_source):
+                shutil.move(dist_source, os.path.join(dated_output, "dist"))
+                self.log("✅ Moved: dist folder")
+            
+            if self._is_onedir_mode():
+                onedir_exe = os.path.join(dated_output, "dist", "MKVApp_onedir", "MKVApp.exe")
+                if not os.path.exists(onedir_exe):
+                    raise Exception(f"Onedir executable not found: {onedir_exe}")
+                self.log("✅ Fast Onedir build detected")
+            else:
+                # Copy executable from moved dist
+                exe_source = os.path.join(dated_output, "dist", "MKVApp.exe")
+                exe_dest = os.path.join(dated_output, "MKVApp.exe")
+
+                if not os.path.exists(exe_source):
+                    raise Exception(f"Executable not found: {exe_source}")
+
+                shutil.copy2(exe_source, exe_dest)
+                self.log("✅ Copied: MKVApp.exe")
+>>>>>>> Stashed changes
             
             # Copy Settings folder
             settings_source = os.path.join(self.source_dir, "Settings")
@@ -430,7 +666,10 @@ class BuildGUI(ctk.CTk):
                 f.write("@echo off\n")
                 f.write("REM Portable MKVApp Launcher\n")
                 f.write("echo Starting MKVApp...\n")
-                f.write("MKVApp.exe\n")
+                if self._is_onedir_mode():
+                    f.write("dist\\MKVApp_onedir\\MKVApp.exe\n")
+                else:
+                    f.write("MKVApp.exe\n")
                 f.write("pause\n")
             self.log("✅ Created: Start_MKVApp.bat")
             
@@ -442,17 +681,26 @@ class BuildGUI(ctk.CTk):
                 f.write("This is a portable version of MKVApp.\n\n")
                 f.write("To run:\n")
                 f.write("- Double-click Start_MKVApp.bat\n")
-                f.write("- Or run MKVApp.exe directly\n\n")
+                if self._is_onedir_mode():
+                    f.write("- Or run dist\\MKVApp_onedir\\MKVApp.exe directly\n\n")
+                else:
+                    f.write("- Or run MKVApp.exe directly\n\n")
                 f.write("Requirements:\n")
                 f.write("- Windows 10/11\n")
                 f.write("- No additional installations needed\n\n")
                 f.write(f"Built on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Build Mode: {self.build_mode.get()}\n")
                 f.write(f"Console Mode: {'Yes' if self.console_mode.get() else 'No'}\n")
                 f.write(f"UPX Compression: {'Yes' if self.upx_compression.get() else 'No'}\n")
             self.log("✅ Created: README.txt")
             
             # Calculate sizes
-            exe_size = os.path.getsize(exe_dest) / (1024 * 1024)
+            if self._is_onedir_mode():
+                onedir_path = os.path.join(dated_output, "dist", "MKVApp_onedir")
+                exe_size = self._calculate_directory_size_mb(onedir_path)
+                self.log(f"📦 Onedir folder size: {exe_size:.1f} MB")
+            else:
+                exe_size = os.path.getsize(exe_dest) / (1024 * 1024)
             
             self.log(f"\n🎉 Build completed successfully!")
             self.log(f"📊 Executable size: {exe_size:.1f} MB")
@@ -463,6 +711,11 @@ class BuildGUI(ctk.CTk):
         except Exception as e:
             self.log(f"\n❌ Build failed: {str(e)}", "error")
             self.after(0, lambda: self._build_error(str(e)))
+        finally:
+            try:
+                self._restore_spec(spec_file, original_spec_content)
+            except Exception as restore_error:
+                self.log(f"⚠️ Failed to restore spec: {restore_error}")
     
     def _build_complete(self, output_dir, exe_size):
         """Called when build completes successfully"""

@@ -59,6 +59,15 @@ class SmartConfigManager:
                 try:
                     with open(file, "r", encoding="utf-8") as f:
                         raw = json.load(f)
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.error(f"❌ Corrupt/unreadable config {file.name}: {e} — skipping")
+                    # Remove corrupt file so next save can recreate it cleanly
+                    try:
+                        file.unlink()
+                    except Exception:
+                        pass
+                    continue
+                try:
                     if section in self.schema_map:
                         assert_valid_schema({section: raw}, {section: self.schema_map[section]})
                     self.data[section] = WatchedDict(
@@ -80,7 +89,10 @@ class SmartConfigManager:
 
     def _on_change(self, section, key, value):
         self.save(section)
-        self.reload(msg=f"🔄 {section}[{key}] → {value}")
+        # Note: reload() is intentionally NOT called here.
+        # _load_all() is a no-op after startup (guarded by _already_loaded),
+        # and calling log_settings() during window destruction causes
+        # "invalid command name" TclErrors.
 
     def reload(self, msg=None):
         try:
@@ -95,12 +107,17 @@ class SmartConfigManager:
 
     def save(self, section):
         path = self.config_dir / f"{section}.json"
+        tmp_path = path.with_suffix(".json.tmp")
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.data[section], f, indent=2)
-            #logger.info(f"💾 Saved {section} to {path}")
+            tmp_path.replace(path)  # atomic rename — original stays intact if killed mid-write
         except Exception as e:
             logger.error(f"❌ Failed to save {section}: {e}")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def get(self, section_or_key, key=None, default=None):
         if isinstance(key, dict) and default is None:

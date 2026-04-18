@@ -26,6 +26,37 @@ from menus.menu_yaml_exporter import generate_yaml_from_registry, write_yaml_to_
 from menus.menu_yaml_exporter import load_menus_from_yaml
 import customtkinter as ctk
 
+# Build-safety: static imports ensure these modules are bundled in frozen builds.
+try:
+    from actions.lbox import common as _mkv_lbox_common  # noqa: F401
+    from actions.tbox import common as _mkv_tbox_common  # noqa: F401
+    from actions.help import help as _mkv_help_actions   # noqa: F401
+except Exception:
+    _mkv_lbox_common = None
+    _mkv_tbox_common = None
+    _mkv_help_actions = None
+
+CRITICAL_GROUP_IMPORTS = {
+    "lbox": ["actions.lbox.common"],
+    "tbox": ["actions.tbox.common"],
+    "help": ["actions.help.help"],
+}
+
+
+def ensure_registry_group_loaded(group_name):
+    """Ensure critical menu groups exist in registry, especially in frozen builds."""
+    labels = global_menu_registry.grouped().get(group_name, [])
+    if labels:
+        return labels
+
+    for mod_name in CRITICAL_GROUP_IMPORTS.get(group_name, []):
+        try:
+            importlib.import_module(mod_name)
+        except Exception as ex:
+            print(f"⚠️ Failed to import fallback module {mod_name}: {ex}")
+
+    return global_menu_registry.grouped().get(group_name, [])
+
 # Special menu layouts: order of items for each popup_key
 # Keywords:
 #   "__title__"  → insert the popup_key as a disabled title
@@ -37,7 +68,7 @@ MENU_COMPOSITIONS = {
     "tb_debug": ["__title__", "__sep__", "tb_debug", "__sep__", "tools", "tbox", "help"],
     "tb_settings": ["__title__", "__sep__", "tb_settings", "__sep__", "tbox", "help"],
     # For lb_files we use dynamic filtering based on current mode (Videos/Subtitles/All)
-    "lb_files": ["__title__", "__sep__", "__dynamic_filter__", "lbox", "help"],
+    "lb_files": ["__title__", "__sep__", "__dynamic_filter__", "batch", "__sep__", "lbox", "help"],
 
     # Add more popup_keys here as needed
 }
@@ -101,7 +132,6 @@ def build_items_from_composition(parts, registry):
     return items
 
 menu_cfg = get_validated_menu_config()
-print("Loaded EXTRA_MENU_TARGETS:", menu_cfg.get("EXTRA_MENU_TARGETS"))
 
 BASE_MENUS = menu_cfg.get("BASE_MENUS", {})
 EXTRA_MENU_TARGETS = menu_cfg.get("EXTRA_MENU_TARGETS", {})
@@ -180,16 +210,12 @@ class Popup(tk.Menu):
                 except:
                     pass
             
-            # Run immediately and after delays
+            # Run cleanup immediately and schedule once more as safety net
             nuclear_cleanup()
-            self.master.after(10, nuclear_cleanup)
-            self.master.after(100, nuclear_cleanup)
-            
-            # LAST RESORT: Simulate ESC key to force Tk to close all menus
             try:
-                self.master.event_generate('<Escape>')
-                self.master.update()
-            except:
+                if self.master.winfo_exists():
+                    self.master.after(100, nuclear_cleanup)
+            except Exception:
                 pass
                 
         return wrapped
@@ -345,12 +371,37 @@ class Popup(tk.Menu):
         popup.post(x_pos, y_pos)
 
     def build_menu_entries(self, menu, entries, menu_registry, popup_key=None):
+        # Forceer gewenste volgorde van het videos-menu vlak voor gebruik
+        try:
+            from menus.menu_registry import global_menu_registry
+            desired_order = [
+                "Play Video",
+                "Transform -> MKV",
+                "MKV -> 8 Bit HEVC",
+                "Inspect Video Info",
+                "Check Subs Language",
+                "Extract Subs",
+                "Download Sub",
+                "Embed Sub",
+                "Remove All Subs",
+                "Speech to SRT (Whisper)"
+            ]
+            group = global_menu_registry._tag_groups.get("videos")
+            if group:
+                label_set = set(group)
+                ordered = [label for label in desired_order if label in label_set]
+                ordered += [label for label in group if label not in desired_order]
+                global_menu_registry._tag_groups["videos"] = ordered
+        except Exception:
+            pass
         # Check if we have a special composition for this popup_key
         if popup_key in MENU_COMPOSITIONS:
             registry = global_menu_registry
 
             def add_items_from_group(group_name):
                 labels = registry.grouped().get(group_name, [])
+                if not labels:
+                    labels = ensure_registry_group_loaded(group_name)
                 # print(f"📦 Injecting group '{group_name}' with {len(labels)} labels")
                 added = 0
                 for label in labels:

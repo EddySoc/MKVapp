@@ -1,0 +1,25 @@
+{
+  "work on internal subs": [
+    "Extract Subs",
+    "Remove All Subs",
+    "Embed Sub"
+  ],
+  "no subs": [
+    "Remove All Subs",
+    "Speech to SRT (Whisper)",
+    "Translate Sub",
+    "Embed Sub"
+  ],
+  "download en embed": [
+    "Remove All Subs",
+    "Download Sub",
+    "Clean & Fix",
+    "Sync Srt",
+    "Embed Sub"
+  ],
+  "Transform and embed": [
+    "Transform -> MKV",
+    "Remove All Subs",
+    "Embed Sub"
+  ]
+}

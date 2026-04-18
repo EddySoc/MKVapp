@@ -1,12 +1,12 @@
 {
-  "BaseDir": "C:/QBMedia",
-  "source": "C:\\QBMedia\\Done\\test\\",
-  "target": "C:\\QBMedia\\Done\\",
-  "backup": "C:/QBMedia",
+  "BaseDir": "C:/Media",
+  "source": "C:/Media/Downloads/",
+  "target": "C:/Media/Done/",
+  "backup": "C:/Media/Backup/",
   "Min_Freespace": 100,
   "Language": "dut",
   "Theme": "dark",
-  "Segbut": "Videos",
+  "Segbut": "All",
   "Display_mode": "windowed",
   "Color_scheme": "dark-blue",
   "Font_family": "Segoe UI",
@@ -15,5 +15,9 @@
   "Font_size": "12",
   "Inc_subdirs": true,
   "SubtitleMethod": "filebot",
-  "Max_Resolution": "1080p"
+  "Max_Resolution": "1080p",
+  "Seg_selected": "Subtitles",
+  "WhisperModel": "medium",
+  "WhisperDevice": "cuda",
+  "WhisperLanguage": "en"
 }

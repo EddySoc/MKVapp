@@ -39,10 +39,6 @@ def bind_basetbox(bindings, wrapper, name, on_right_click=None, on_release=None)
     if on_release:
         bindings[textbox].append(("<ButtonRelease-1>", on_release))
 
-    # Debug log for manual right-click test
-    #print(f"🧬 Binding BaseTBox inner textbox '{name}': {textbox}")
-    textbox.bind("<Button-3>", lambda e: print(f"📢 Right-click inside '{name}'!"))
-
 def bind_listbox(bindings, widget, name, on_right_click):
     widget.custom_name = name
     bindings[widget] = [("<Button-3>", on_right_click)]

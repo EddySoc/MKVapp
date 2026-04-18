@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 import customtkinter as ctk
 from decorators.decorators import menu_tag
 import shutil
+from utils.shared_utils import get_settings_file
 
 def get_ffprobe_cmd():
     """Get ffprobe executable path from config or PATH"""
@@ -12,7 +13,7 @@ def get_ffprobe_cmd():
     
     # Check config file for custom path
     try:
-        config_path = os.path.join("Settings", "tools_cfg.json")
+        config_path = get_settings_file("tools_cfg")
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 config = json.load(f)

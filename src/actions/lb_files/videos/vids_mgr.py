@@ -16,6 +16,7 @@ import re
 import json
 from pathlib import Path
 from utils.text_helpers import tb_update
+from utils.shared_utils import get_settings_file
 
 print("🎬 Loading videos/vids_mgr.py - registering Remove All Subs")
 
@@ -45,7 +46,7 @@ def play_video():
     
     # Get video player path from config
     try:
-        config_path = os.path.join("Settings", "tools_cfg.json")
+        config_path = get_settings_file("tools_cfg")
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 config = json.load(f)
@@ -94,7 +95,7 @@ def get_tool_path(tool_name):
     
     # Check config file for custom path
     try:
-        config_path = os.path.join("Settings", "tools_cfg.json")
+        config_path = get_settings_file("tools_cfg")
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 config = json.load(f)
@@ -128,6 +129,83 @@ def get_tool_path(tool_name):
     
     return None
 
+# Languages to keep when transforming to MKV
+_PREF_LANG  = "dut"   # preferred language (from settings)
+_BACKUP_LANG = "eng"  # backup language
+
+# Subtitle codecs that convert cleanly to SRT
+_TEXT_SUB_CODECS = {"mov_text", "webvtt", "microdvd", "text", "ttxt", "subrip"}
+# Image-based subtitle codecs that cannot be converted – skip them
+_IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "pgssub", "vobsub"}
+
+def build_lang_map_args(video_path, ffprobe_path):
+    """Return (map_args, codec_args) for ffmpeg keeping only pref/backup lang streams.
+
+    - All video streams are always kept.
+    - Audio: pref lang + backup lang; fallback to first audio if neither found.
+    - Subtitles: pref lang + backup lang, text-based only (image subs skipped).
+    """
+    if not ffprobe_path:
+        return ["-map", "0:v", "-map", "0:a", "-map", "0:s?"], ["-c:s", "copy"]
+
+    cmd = [
+        ffprobe_path, "-v", "error",
+        "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language",
+        "-of", "json",
+        video_path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError("ffprobe failed")
+        data = json.loads(result.stdout)
+    except Exception:
+        return ["-map", "0:v", "-map", "0:a", "-map", "0:s?"], ["-c:s", "copy"]
+
+    keep_langs = {_PREF_LANG, _BACKUP_LANG}
+    map_args = []
+    codec_args = []
+    sub_out_idx = 0
+    found_audio = []
+    first_audio_idx = None
+
+    map_args += ["-map", "0:v"]   # always keep all video
+
+    for stream in data.get("streams", []):
+        stype  = stream.get("codec_type", "")
+        codec  = stream.get("codec_name", "")
+        lang   = stream.get("tags", {}).get("language", "").lower()
+        sidx   = stream["index"]
+
+        if stype == "audio":
+            if first_audio_idx is None:
+                first_audio_idx = sidx
+            if lang in keep_langs:
+                map_args += ["-map", f"0:{sidx}"]
+                found_audio.append(sidx)
+
+        elif stype == "subtitle":
+            if lang not in keep_langs:
+                continue
+            if codec in _IMAGE_SUB_CODECS:
+                print(f"⏭️  Skipping image subtitle (lang={lang}, codec={codec})")
+                continue
+            map_args += ["-map", f"0:{sidx}"]
+            if codec in _TEXT_SUB_CODECS:
+                codec_args += [f"-c:s:{sub_out_idx}", "srt"]
+            else:
+                codec_args += [f"-c:s:{sub_out_idx}", "copy"]
+            sub_out_idx += 1
+
+    # Fallback: keep first audio track if no matching lang found
+    if not found_audio and first_audio_idx is not None:
+        map_args += ["-map", f"0:{first_audio_idx}"]
+
+    if not codec_args:
+        codec_args = ["-c:s", "copy"]
+
+    return map_args, codec_args
+
 def get_video_duration(video_path):
     """Get video duration in seconds using ffprobe"""
     ffprobe_path = get_tool_path("ffprobe")
@@ -157,6 +235,55 @@ def parse_ffmpeg_progress(line):
         hours, minutes, seconds = match.groups()
         return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     return None
+
+_hevc_encoder_cache = None  # cached after first detection
+
+def detect_hevc_encoder(ffmpeg_exe):
+    """Detect the best available HEVC encoder. Returns (encoder, extra_args)."""
+    global _hevc_encoder_cache
+    if _hevc_encoder_cache is not None:
+        return _hevc_encoder_cache
+
+    # Step 1: check if hevc_nvenc is listed in ffmpeg encoders (fast, no GPU needed)
+    nvenc_listed = False
+    try:
+        enc_list = subprocess.run(
+            [ffmpeg_exe, "-encoders"],
+            capture_output=True, text=True, timeout=10
+        )
+        if "hevc_nvenc" in enc_list.stdout:
+            nvenc_listed = True
+            print("🔍 hevc_nvenc found in ffmpeg encoder list")
+        else:
+            print("⚠️ hevc_nvenc NOT in ffmpeg encoder list")
+    except Exception as e:
+        print(f"⚠️ Could not query ffmpeg encoders: {e}")
+
+    # Step 2: if listed, do a quick encode test to confirm GPU works
+    if nvenc_listed:
+        try:
+            test = subprocess.run(
+                [ffmpeg_exe,
+                 "-f", "lavfi", "-i", "color=black:size=256x256:rate=25:duration=3",
+                 "-c:v", "hevc_nvenc",
+                 "-pix_fmt", "yuv420p",
+                 "-f", "null", "-"],
+                capture_output=True, text=True, timeout=15
+            )
+            if test.returncode == 0:
+                print("✅ HEVC encoder: hevc_nvenc (NVIDIA GPU)")
+                _hevc_encoder_cache = ("hevc_nvenc", ["-preset", "p4", "-cq", "28"])
+                return _hevc_encoder_cache
+            else:
+                print(f"⚠️ hevc_nvenc test failed (rc={test.returncode}):")
+                print(test.stderr[-500:] if test.stderr else "(no stderr)")
+        except Exception as e:
+            print(f"⚠️ hevc_nvenc test exception: {e}")
+
+    # Fallback to CPU
+    print("⚙️ HEVC encoder: libx265 (CPU fallback)")
+    _hevc_encoder_cache = ("libx265", ["-preset", "fast", "-crf", "23"])
+    return _hevc_encoder_cache
 
 @menu_tag(label="Remove All Subs", icon="🗑️", group="videos")
 def remove_all_subtitles():
@@ -188,6 +315,7 @@ def remove_all_subtitles():
     total = len(selected)
 
     def worker():
+        s.batch_step_done = False  # signaal: async stap bezig
         status_slot = getattr(s, 'bottomrow_label', None)
         if status_slot:
             s.app.after(0, lambda: status_slot.show_progress(mode="determinate"))
@@ -257,6 +385,11 @@ def remove_all_subtitles():
         s.app.after(0, lambda: tb_update('tb_info', "─" * 50, "normal"))
         if status_slot:
             s.app.after(0, lambda: status_slot.reset())
+        from utils.scan_helpers import reload as _reload
+        def _reload_then_done():
+            _reload(s.app)
+            s.app.after(200, lambda: setattr(s, 'batch_step_done', True))
+        s.app.after(0, _reload_then_done)
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
@@ -330,13 +463,19 @@ def transform_2_mkv():
         
         # Get video duration for progress calculation
         duration = get_video_duration(video_path)
-        
+
+        # Build selective stream map: all video, dut+eng audio & text subs only
+        ffprobe_path = get_tool_path("ffprobe")
+        map_args, sub_codec_args = build_lang_map_args(video_path, ffprobe_path)
+
         # Use ffmpeg to convert to MKV (copy streams, no re-encoding)
         cmd = [
             ffmpeg_path, "-i", video_path,
             "-fflags", "+genpts",
+        ] + map_args + [
             "-c:v", "copy",
             "-c:a", "copy",
+        ] + sub_codec_args + [
             "-y",  # Overwrite output file if exists
             output_path
         ]
@@ -561,9 +700,9 @@ def mkv_embed_sub():
             "-map", "1:0",      # Map subtitle from second input (SRT file)
             "-c:v", "copy",
             "-c:a", "copy",
-            "-c:s", "srt",
+            "-c:s", "subrip",
             f"-metadata:s:s:0", f"language={lang_code}",
-            "-disposition:s:0", "default",
+            "-disposition:s:0", "default+forced",
             "-y",
             output_path
         ]
@@ -637,6 +776,7 @@ def mkv_embed_sub():
 @menu_tag(label="MKV -> 8 Bit HEVC", group="videos")
 def mkv_2_8bitHEVC():
     """Convert 10-bit/12-bit HEVC to 8-bit HEVC"""
+    import threading
     from shared_data import get_shared
     s = get_shared()
     
@@ -647,7 +787,7 @@ def mkv_2_8bitHEVC():
         print("⚠️ No files selected.")
         return
     
-    # Setup progress bar
+    # Setup progress bar on the main thread
     total = len(selected)
     s.bottomrow_label.label.grid_remove()
     s.bottomrow_label.progress.grid()
@@ -658,177 +798,212 @@ def mkv_2_8bitHEVC():
     tb_update('tb_info', f"🎞️ MKV to 8-bit HEVC - {total} file(s)", "normal")
     
     video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.wmv'}
-    
-    for idx, video_path in enumerate(selected):
-        # Add dotted line between files (not before first)
-        if idx > 0:
-            tb_update('tb_info', "· " * 25, "normal")
-        # Update progress
-        progress = idx / total
-        s.bottomrow_label.update_progress(progress)
-        s.app.update_idletasks()
-        ext = os.path.splitext(video_path)[1].lower()
-        
-        # Skip non-video files
-        if ext not in video_exts:
-            print(f"⏭️ Skipping non-video: {os.path.basename(video_path)}")
-            continue
-        
-        # Check current pixel format with ffprobe
-        print(f"🔍 Checking pixel format: {os.path.basename(video_path)}")
-        check_cmd = [
-            "ffprobe",
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=pix_fmt",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            video_path
-        ]
-        
+
+    def worker():
+        import traceback
+        print(f"🧵 [8bit worker] started — {total} file(s)")
         try:
-            result = subprocess.run(
-                check_cmd,
-                capture_output=True,
-                text=True
-            )
+            _worker_body()
+        except Exception:
+            traceback.print_exc()
+            s.app.after(0, lambda: (
+                tb_update('tb_info', "❌ 8-bit conversion error (see console)", "normal"),
+            ))
+
+    def _worker_body():
+        for idx, video_path in enumerate(selected):
+            # Add dotted line between files (not before first)
+            if idx > 0:
+                s.app.after(0, lambda: tb_update('tb_info', "· " * 25, "normal"))
+            # Update progress on main thread
+            progress = idx / total
+            s.app.after(0, lambda p=progress: s.bottomrow_label.update_progress(p))
+            ext = os.path.splitext(video_path)[1].lower()
             
-            if result.returncode == 0:
-                pix_fmt = result.stdout.strip()
-                print(f"  📊 Current pixel format: {pix_fmt}")
-                
-                # Check if already 8-bit (yuv420p is 8-bit)
-                if pix_fmt == "yuv420p":
-                    print(f"  ✅ Already 8-bit, skipping: {os.path.basename(video_path)}")
-                    tb_update('tb_info', f"✅ Already 8-bit: {os.path.basename(video_path)}", "normal")
+            # Skip non-video files
+            if ext not in video_exts:
+                print(f"⏭️ Skipping non-video: {os.path.basename(video_path)}")
+                continue
+            
+            # Check current pixel format with ffprobe
+            ffprobe_path = get_tool_path("ffprobe")
+            ffprobe_exe = ffprobe_path if ffprobe_path else "ffprobe"
+            print(f"🔍 Checking pixel format: {os.path.basename(video_path)}")
+            check_cmd = [
+                ffprobe_exe,
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=pix_fmt",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path
+            ]
+            
+            try:
+                result = subprocess.run(check_cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    pix_fmt = result.stdout.strip()
+                    print(f"  📊 Current pixel format: {pix_fmt}")
+                    if pix_fmt == "yuv420p":
+                        print(f"  ✅ Already 8-bit, skipping: {os.path.basename(video_path)}")
+                        s.app.after(0, lambda f=video_path: tb_update('tb_info', f"✅ Already 8-bit: {os.path.basename(f)}", "normal"))
+                        continue
+                    else:
+                        print(f"  ⚡ Needs conversion from {pix_fmt} to 8-bit")
+                else:
+                    print(f"  ⚠️ Could not determine pixel format, will attempt conversion")
+            except Exception as e:
+                print(f"  ⚠️ Error checking format: {e}, will attempt conversion")
+            
+            # Create output filename
+            dir_name = os.path.dirname(video_path)
+            base_name = os.path.splitext(os.path.basename(video_path))[0]
+            output_path = os.path.join(dir_name, f"{base_name}_8bit.mkv")
+            
+            print(f"🎬 Converting to 8-bit HEVC: {os.path.basename(video_path)}")
+            s.app.after(0, lambda f=video_path: tb_update('tb_info', f"🎬 Converting: {os.path.basename(f)}", "normal"))
+            
+            # Get video duration for progress calculation
+            duration = get_video_duration(video_path)
+            
+            # Get max resolution setting from config
+            from shared_data import shared
+            max_res = shared.config.get("persistent_cfg", {}).get("Max_Resolution", "1080p")
+            
+            # Get current video resolution
+            res_cmd = [
+                ffprobe_exe,
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=p=0",
+                video_path
+            ]
+            
+            scale_filter = None
+            try:
+                result = subprocess.run(res_cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    width, height = map(int, result.stdout.strip().split(','))
+                    print(f"  📐 Current resolution: {width}x{height}")
+                    target_height = 1080 if max_res == "1080p" else 720 if max_res == "720p" else 1080
+                    if height > target_height:
+                        scale_filter = f"scale=-2:{target_height}"
+                        print(f"  ⬇️ Scaling down to {target_height}p")
+                    else:
+                        print(f"  ✅ Resolution already at or below {target_height}p")
+            except Exception as e:
+                print(f"  ⚠️ Could not detect resolution: {e}")
+            
+            # Build ffmpeg command with optional scaling
+            ffmpeg_path = get_tool_path("ffmpeg")
+            ffmpeg_exe = ffmpeg_path if ffmpeg_path else "ffmpeg"
+            encoder, enc_args = detect_hevc_encoder(ffmpeg_exe)
+            s.app.after(0, lambda e=encoder: tb_update('tb_info', f"⚙️ Encoder: {e}", "normal"))
+            cmd = [ffmpeg_exe, "-i", video_path]
+            # For 10-bit to 8-bit: scale filter must include format conversion for NVENC
+            if scale_filter and encoder == "hevc_nvenc":
+                cmd.extend(["-vf", f"{scale_filter},format=yuv420p"])
+            elif scale_filter:
+                cmd.extend(["-vf", scale_filter])
+            cmd.extend([
+                "-c:v", encoder,
+                "-pix_fmt", "yuv420p",  # Force 8-bit
+                *enc_args,
+                "-c:a", "copy",
+                "-c:s", "copy",
+                "-y",
+                output_path
+            ])
+            
+            try:
+                print("⚠️ This may take a while (re-encoding video)...")
+
+                # Open log file
+                log_path = output_path + ".log"
+                try:
+                    log_f = open(log_path, 'a', encoding='utf-8', buffering=1)
+                    log_f.write(f"\n=== Converting {os.path.basename(video_path)} ===\n")
+                    log_f.flush()
+                except Exception:
+                    log_f = None
+
+                # Run ffmpeg; stderr to stdout so progress lines are readable
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=1
+                )
+
+                # Read output line by line and push progress to main thread
+                try:
+                    for line in process.stdout:
+                        if not line:
+                            continue
+                        line_str = line.rstrip('\n')
+                        if log_f:
+                            try:
+                                log_f.write(line_str + "\n")
+                                log_f.flush()
+                            except Exception:
+                                pass
+
+                        if duration:
+                            current_time = parse_ffmpeg_progress(line_str)
+                            if current_time is not None:
+                                file_progress = min(current_time / duration, 1.0)
+                                overall_progress = (idx + file_progress) / total
+                                s.app.after(0, lambda p=overall_progress: s.bottomrow_label.update_progress(p))
+                except Exception:
+                    pass
+
+                process.wait()
+                if log_f:
+                    try:
+                        log_f.write(f"Process exited with code: {process.returncode}\n")
+                        log_f.flush()
+                        log_f.close()
+                    except Exception:
+                        pass
+
+                if process.returncode != 0:
+                    print(f"❌ FFmpeg failed with return code {process.returncode}")
+                    s.app.after(0, lambda f=video_path: tb_update('tb_info', f"❌ Failed: {os.path.basename(f)}", "normal"))
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
                     continue
-                else:
-                    print(f"  ⚡ Needs conversion from {pix_fmt} to 8-bit")
-            else:
-                print(f"  ⚠️ Could not determine pixel format, will attempt conversion")
-        except Exception as e:
-            print(f"  ⚠️ Error checking format: {e}, will attempt conversion")
-        
-        # Create output filename
-        dir_name = os.path.dirname(video_path)
-        base_name = os.path.splitext(os.path.basename(video_path))[0]
-        output_path = os.path.join(dir_name, f"{base_name}_8bit.mkv")
-        
-        print(f"🎬 Converting to 8-bit HEVC: {os.path.basename(video_path)}")
-        tb_update('tb_info', f"🎬 Converting: {os.path.basename(video_path)}", "normal")
-        
-        # Get video duration for progress calculation
-        duration = get_video_duration(video_path)
-        
-        # Get max resolution setting from config
-        from shared_data import shared
-        max_res = shared.config.get("persistent_cfg", {}).get("Max_Resolution", "1080p")
-        
-        # Get current video resolution
-        res_cmd = [
-            "ffprobe",
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "csv=p=0",
-            video_path
-        ]
-        
-        scale_filter = None
-        try:
-            result = subprocess.run(res_cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                width, height = map(int, result.stdout.strip().split(','))
-                print(f"  📐 Current resolution: {width}x{height}")
-                
-                # Determine target height based on config
-                target_height = 1080 if max_res == "1080p" else 720 if max_res == "720p" else 1080
-                
-                # Only scale down if current resolution is higher
-                if height > target_height:
-                    scale_filter = f"scale=-2:{target_height}"
-                    print(f"  ⬇️ Scaling down to {target_height}p")
-                else:
-                    print(f"  ✅ Resolution already at or below {target_height}p")
-        except Exception as e:
-            print(f"  ⚠️ Could not detect resolution: {e}")
-        
-        # Build ffmpeg command with optional scaling
-        cmd = ["ffmpeg", "-i", video_path]
-        
-        # Add video filter if scaling is needed
-        if scale_filter:
-            cmd.extend(["-vf", scale_filter])
-        
-        cmd.extend([
-            "-c:v", "libx265",
-            "-pix_fmt", "yuv420p",  # Force 8-bit
-            "-preset", "medium",
-            "-crf", "23",
-            "-c:a", "copy",
-            "-c:s", "copy",
-            "-y",
-            output_path
-        ])
-        
-        try:
-            print("⚠️ This may take a while (re-encoding video)...")
-            
-            # Run ffmpeg with real-time output
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
-            
-            # Read stderr line by line for progress
-            for line in process.stderr:
-                if duration:
-                    current_time = parse_ffmpeg_progress(line)
-                    if current_time:
-                        file_progress = min(current_time / duration, 1.0)
-                        overall_progress = (idx + file_progress) / total
-                        s.bottomrow_label.update_progress(overall_progress)
-                        s.app.update_idletasks()
-            
-            process.wait()
-            
-            if process.returncode != 0:
-                print(f"❌ FFmpeg failed with return code {process.returncode}")
-                tb_update('tb_info', f"❌ Failed: {os.path.basename(video_path)}", "normal")
+
+                if not os.path.exists(output_path):
+                    print(f"❌ Output file was not created: {output_path}")
+                    s.app.after(0, lambda: tb_update('tb_info', "❌ Output not created", "normal"))
+                    continue
+
+                print(f"✅ Converted to 8-bit: {base_name}_8bit.mkv")
+                s.app.after(0, lambda n=f"{base_name}_8bit.mkv": tb_update('tb_info', f"✅ Created: {n}", "normal"))
+
+            except Exception as e:
+                print(f"❌ Error processing {os.path.basename(video_path)}: {e}")
+                s.app.after(0, lambda f=video_path: tb_update('tb_info', f"❌ Error: {os.path.basename(f)}", "normal"))
                 if os.path.exists(output_path):
                     os.remove(output_path)
-                continue
-            
-            if not os.path.exists(output_path):
-                print(f"❌ Output file was not created: {output_path}")
-                tb_update('tb_info', f"❌ Output not created", "normal")
-                continue
-            
-            print(f"✅ Converted to 8-bit: {base_name}_8bit.mkv")
-            tb_update('tb_info', f"✅ Created: {base_name}_8bit.mkv", "normal")
-            
-        except Exception as e:
-            print(f"❌ Error processing {os.path.basename(video_path)}: {e}")
-            tb_update('tb_info', f"❌ Error: {os.path.basename(video_path)}", "normal")
-            if os.path.exists(output_path):
-                os.remove(output_path)
-    
-    # Complete progress bar
-    s.bottomrow_label.update_progress(1.0, "100%")
-    
-    print("✅ 8-bit HEVC conversion completed")
-    tb_update('tb_info', "· " * 25, "normal")
-    tb_update('tb_info', "✅ MKV to 8-bit HEVC complete", "normal")
-    tb_update('tb_info', "─" * 50, "normal")
-    
-    # Refresh the listbox to show new 8bit files
-    from utils.scan_helpers import reload
-    reload(s.app)
-    
-    # Restore label
-    s.bottomrow_label.progress.grid_remove()
-    s.bottomrow_label.label.grid()
+        
+        # All done — update UI on main thread
+        def _finish():
+            s.bottomrow_label.update_progress(1.0, "100%")
+            tb_update('tb_info', "· " * 25, "normal")
+            tb_update('tb_info', "✅ MKV to 8-bit HEVC complete", "normal")
+            tb_update('tb_info', "─" * 50, "normal")
+            from utils.scan_helpers import reload
+            reload(s.app)
+            s.bottomrow_label.progress.grid_remove()
+            s.bottomrow_label.progress_label.grid_remove()
+            s.bottomrow_label.label.grid()
+
+        s.app.after(0, _finish)
+
+    print(f"🚀 Starting 8-bit HEVC conversion for {total} file(s)...")
+    threading.Thread(target=worker, daemon=True).start()
 
 @menu_tag(label="Check Subs Language", group="videos")
 def mkv_check_lang():

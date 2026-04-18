@@ -1,5 +1,9 @@
 {
-  "opensubtitles": {
-    "api_key": ""
-  }
+    "opensubtitles": {
+        "api_key": "YOUR_OPENSUBTITLES_API_KEY"
+    },
+    "filebot": {
+        "username": "YOUR_USERNAME",
+        "password": "YOUR_PASSWORD"
+    }
 }

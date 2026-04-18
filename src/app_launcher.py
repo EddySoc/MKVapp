@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------------------
-# Name:        module1als ik in
-# Purpose:
+# Name:        app_launcher.py 
+# Purpose:     This module serves as the main entry point for the MKV App, responsible for
 #
 # Author:      EddyS
 #
@@ -10,13 +10,54 @@
 #-------------------------------------------------------------------------------
 
 import sys
+import os
+
+# Ultra-early debug logging: vang alles wat misgaat vóór GUI of prints
+try:
+    with open("startup_debug.log", "a", encoding="utf-8") as f:
+        f.write("[START] app_launcher.py boot\n")
+        f.write(f"sys.stdout={repr(sys.stdout)} sys.stderr={repr(sys.stderr)}\n")
+except Exception as e:
+    pass
+
+# In no-console launches (e.g. pythonw/detached), sys.stdout/stderr kunnen None zijn.
+try:
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, 'w', encoding='utf-8', errors='replace')
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, 'w', encoding='utf-8', errors='replace')
+except Exception as e:
+    with open("startup_debug.log", "a", encoding="utf-8") as f:
+        f.write(f"[ERROR] stdout/stderr fallback: {e}\n")
+
+# Force UTF-8 output zodat emoji in print() niet crashen op Windows terminals.
+try:
+    if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception as e:
+    with open("startup_debug.log", "a", encoding="utf-8") as f:
+        f.write(f"[ERROR] reconfigure: {e}\n")
 # print("[DEBUG] Python executable:", sys.executable)
 # app_launcher.py
 
 import customtkinter as ct
 import tkinter as tk
 import queue
-import os
+
+def _ensure_app_workdir():
+    """Use a stable working directory so relative Settings paths always resolve."""
+    if getattr(sys, "frozen", False):
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(app_dir)
+
+_ensure_app_workdir()
+
+
+
 
 from utils.shared_utils import register_shared
 # print("[DEBUG] Python executable:", sys.executable)
@@ -37,19 +78,6 @@ from menus.menu_registry import global_menu_registry
 # Forceer import van actions.lb_files zodat alle menu-items (ook subtitles) worden geregistreerd
 import actions.lb_files
 from menus.init_loader import load_all_actions
-
-# DEBUG: Check menu registry early
-print("=== EARLY MENU REGISTRY DEBUG ===")
-registry = global_menu_registry
-print("Available groups:", list(registry.grouped().keys()))
-print("tbox group items:", registry.grouped().get('tbox', []))
-print("tb_info group items:", registry.grouped().get('tb_info', []))
-print("All entries with 'clear' in label:")
-for label, entry in registry._registry.items():
-    if 'clear' in label.lower():
-        print(f"  {label}: groups={entry.get('groups', 'no groups')}")
-print("Total registry entries:", len(registry._registry))
-print("==================================")
 
 # Write debug info to file - DISABLED
 # with open("early_menu_debug.log", "w", encoding="utf-8") as f:
@@ -114,6 +142,18 @@ class AppLauncher:
         self.app.grid_rowconfigure(0, weight=1)
         self.app.grid_columnconfigure(0, weight=1)
 
+        # Show full tracebacks for errors in after() callbacks and event bindings
+        import traceback as _tb
+        def _report_callback_exception(exc, val, tb):
+            # Suppress harmless "invalid command name" errors that occur when
+            # after() callbacks fire during/after window destruction on close.
+            import tkinter as _tk
+            if issubclass(exc, _tk.TclError) and "invalid command name" in str(val):
+                return
+            print("\n🔥 Tkinter callback error:")
+            _tb.print_exception(exc, val, tb)
+        self.app.report_callback_exception = _report_callback_exception
+
         # Menu and resolver setup
         self.menus = smart_config_manager.config_mgr.data.get("popmenu_cfg", {}).copy()
         self.widget_name_map = {}
@@ -157,24 +197,12 @@ class AppLauncher:
         # 📋 Initialize popup menu manager
         self.s.pop_menu = Popup(self.app, resolver=self.resolver, shared_state=self.s, action_lookup=menu_registry)
 
-        # 🗂️ Organize menu entries by tag
+        # 🗂️ Organize menu entries by their declared group (not tag)
         registry = global_menu_registry
         for label, entry in registry.all().items():
-            group = entry.get("tag", "default")
+            group = entry.get("group", entry.get("tag", "default"))
             self.s.pop_menu.menus.setdefault(group, []).append(label)
 
-        # DEBUG: Print menu registry contents
-        print("=== MENU REGISTRY DEBUG (PORTABLE) ===")
-        print("Available groups:", list(registry.grouped().keys()))
-        print("tbox group items:", registry.grouped().get('tbox', []))
-        print("tb_info group items:", registry.grouped().get('tb_info', []))
-        print("All entries with 'clear' in label:")
-        for label, entry in registry._registry.items():
-            if 'clear' in label.lower():
-                print(f"  {label}: groups={entry.get('groups', 'no groups')}")
-        print("Total registry entries:", len(registry._registry))
-        print("=====================================")
-        
         # Write debug info to file - DISABLED
         # with open("menu_debug.log", "w", encoding="utf-8") as f:
         #     f.write("=== MENU REGISTRY DEBUG (PORTABLE) ===\n")
@@ -274,77 +302,119 @@ class AppLauncher:
             traceback.print_exc()
 
     def bind_events(self):
-        manager = BindingManager(self.app, self.s.pop_menu)
-        self.s.binding_manager = manager
-        self.s.app = self.app
-        self.s.pop_menu.load_menus()
-
-        manager._bind_events()  # ?? trigger the actual binding here
+        try:
+            manager = BindingManager(self.app, self.s.pop_menu)
+            self.s.binding_manager = manager
+            self.s.app = self.app
+            self.s.pop_menu.load_menus()
+            # Note: BindingManager.__init__ already calls _bind_events() internally.
+            # Do NOT call it again here — doubles registration causes stale Tcl commands.
+        except Exception as e:
+            import traceback
+            print(f"💥 bind_events crash: {e}")
+            traceback.print_exc()
 
     def process_gui_queue(self):
+        if getattr(self, '_closing', False):
+            return
         try:
             while True:
                 task = self.s.gui_queue.get_nowait()
-                task()
+                try:
+                    task()
+                except Exception as e:
+                    print(f"💥 GUI queue task error: {e}")
         except queue.Empty:
             pass
         finally:
-            self.process_id = self.app.after(100, self.process_gui_queue)
+            try:
+                if not getattr(self, '_closing', False) and self.app.winfo_exists():
+                    self.process_id = self.app.after(100, self.process_gui_queue)
+            except Exception:
+                pass
 
     def post_layout_tasks(self):
-        self.shared = self.s  # self.s is already the shared state object
-
-        # ✅ Ensure config_data is present before syncing
-        if not hasattr(self.shared, "config_data") or self.shared.config_data is None:
-            raise RuntimeError("Shared state is missing config_data. Cannot sync configuration.")
-
-        # ✅ Sync configuration into shared state
-        sync_config_to_state(
-            self.shared.config_data,
-            config_mgr=self.config_mgr,
-            shared=self.shared
-        )
-
-        # ✅ Perform startup updates
-        update_on_start(self.app)
-
-        # Optional: open debug dashboards automatically when testing
         try:
-            if os.environ.get("OPEN_DEBUG_DASHES", "0") == "1":
-                from actions.tb_debug.menu_dashboard import launch_menu_dashboard
-                from actions.tools.debug_dashboard import open_debug_dashboard
+            self.shared = self.s  # self.s is already the shared state object
 
-                # schedule shortly after startup so all bindings exist
-                self.app.after(300, lambda: launch_menu_dashboard(master=self.app))
-                self.app.after(500, lambda: open_debug_dashboard(self.app, self.s, getattr(self.s, 'binding_manager', None)))
-        except Exception as ex:
-            print(f"⚠️ Failed to auto-open debug dashboards: {ex}")
+            # ✅ Ensure config_data is present before syncing
+            if not hasattr(self.shared, "config_data") or self.shared.config_data is None:
+                raise RuntimeError("Shared state is missing config_data. Cannot sync configuration.")
 
-        # ✅ Start GUI queue processing loop
-        self.app.after(0, self.process_gui_queue)
+            # ✅ Sync configuration into shared state
+            sync_config_to_state(
+                self.shared.config_data,
+                config_mgr=self.config_mgr,
+                shared=self.shared
+            )
+
+            # ✅ Perform startup updates
+            update_on_start(self.app)
+
+            # Optional: open debug dashboards automatically when testing
+            try:
+                if os.environ.get("OPEN_DEBUG_DASHES", "0") == "1":
+                    from actions.tb_debug.menu_dashboard import launch_menu_dashboard
+                    from actions.tools.debug_dashboard import open_debug_dashboard
+
+                    # schedule shortly after startup so all bindings exist
+                    self.app.after(300, lambda: launch_menu_dashboard(master=self.app))
+                    self.app.after(500, lambda: open_debug_dashboard(self.app, self.s, getattr(self.s, 'binding_manager', None)))
+            except Exception as ex:
+                print(f"⚠️ Failed to auto-open debug dashboards: {ex}")
+
+            # ✅ Start GUI queue processing loop
+            self.app.after(0, self.process_gui_queue)
+
+        except Exception as e:
+            import traceback
+            print(f"💥 post_layout_tasks crash: {e}")
+            traceback.print_exc()
 
 
 
     def on_close(self, event=None):
-        self.app.after_cancel(self.process_id)
-        self.app.destroy()
-        self.app.quit()
+        if getattr(self, '_closing', False):
+            return
+        self._closing = True
+        # Cancel every pending after() callback so no lambda fires on a dead window
+        try:
+            for after_id in self.app.tk.call('after', 'info'):
+                try:
+                    self.app.after_cancel(after_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            # Stop mainloop first, then destroy on idle to avoid Tk deadlocks.
+            self.app.quit()
+        except Exception:
+            pass
+
+        def _destroy_root():
+            try:
+                if self.app.winfo_exists():
+                    self.app.destroy()
+            except Exception:
+                pass
+
+        try:
+            self.app.after_idle(_destroy_root)
+            self.app.after(200, _destroy_root)
+            # Last-resort guard: if Tk remains hung, force process exit.
+            self.app.after(2500, lambda: os._exit(0))
+        except Exception:
+            _destroy_root()
 
 
     def launch(self):
         # 1) Import all action modules => runs @menu_tag and registers
         load_all_actions()
-
         from menus.menu_registry import global_menu_registry
+        print("[DEBUG] Menu groups after load_all_actions:", global_menu_registry.grouped())
         from menus.popup import MENU_COMPOSITIONS, audit_menu_compositions
-
-        from menus.popup import global_menu_registry  # adjust path if needed
-
-        # Note: previously placeholder menu entries were auto-registered here
-        # for groups with no actions. That behavior produced clutter in the
-        # debug menus; placeholders are now removed to keep menus clean.
-
-        audit_menu_compositions(MENU_COMPOSITIONS, global_menu_registry, fail_on_error=False)
+        # ...existing code...
 
         self.resolver.auto_register_from(self.app)
         self.setup_shared_state()
@@ -357,10 +427,16 @@ class AppLauncher:
         self.app.protocol("WM_DELETE_WINDOW", self.on_close)
         self.app.after(0, self.bind_events)
         self.app.after(200, self.post_layout_tasks)
-        self.app.mainloop()
+        try:
+            self.app.mainloop()
+        except KeyboardInterrupt:
+            pass  # Ignore Ctrl+C — window close handles cleanup via on_close
+
+
 
 
 if __name__ == "__main__":
     launcher = AppLauncher()
     launcher.launch()
+
 

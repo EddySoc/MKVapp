@@ -23,6 +23,30 @@ def setup_utils():
 
 def setup_pop_menu(app):
     shared_data.pop_menu = Popup(app)
+    # Forceer vaste volgorde voor 'videos'-menu
+    try:
+        from menus.menu_registry import global_menu_registry
+        desired_order = [
+            "Play Video",
+            "Transform -> MKV",
+            "MKV -> 8 Bit HEVC",
+            "Inspect Video Info",
+            "Check Subs Language",
+            "Extract Subs",
+            "Download Sub",
+            "Embed Sub",
+            "Remove All Subs",
+            "Speech to SRT (Whisper)"
+        ]
+        group = global_menu_registry._tag_groups.get("videos")
+        if group:
+            # Herordenen: alleen labels die bestaan, rest achteraan
+            label_set = set(group)
+            ordered = [label for label in desired_order if label in label_set]
+            ordered += [label for label in group if label not in desired_order]
+            global_menu_registry._tag_groups["videos"] = ordered
+    except Exception as e:
+        print(f"[MenuSort] Kon videos-menu niet sorteren: {e}")
 
 def setup_binding_manager(app):
     shared_data.manager = BindingManager(app, shared_data.pop_menu)

@@ -1,62 +1,8 @@
 metadata:
-  generated_at: '2026-02-23T15:26:24.016010'
+  generated_at: '2026-04-18T09:39:15.280410'
   source: menu_registry
   version: 2.0.0
 Menus:
-  tb_info:
-  - label: DiskInfo
-    action: diskinfo
-    icon: 🔍
-  - label: Disk InfoBar
-    action: show_disk_info
-    icon: 🔍
-  videos:
-  - label: Play Video
-    action: play_video
-    icon: ▶️
-  - label: Remove All Subs
-    action: remove_all_subtitles
-    icon: 🗑️
-  - label: Transform -> MKV
-    action: transform_2_mkv
-  - label: Embed Sub
-    action: mkv_embed_sub
-  - label: MKV -> 8 Bit HEVC
-    action: mkv_2_8bitHEVC
-  - label: Check Subs Language
-    action: mkv_check_lang
-  - label: Inspect Video Info
-    action: inspect_video_info
-    icon: 🔍
-  - label: Download Sub
-    action: download_subtitles_for_selected
-    icon: 🔽
-  - label: Extract Subs
-    action: extract_subtitles
-  subtitles:
-  - label: Show SRT File
-    action: show_srt_file
-  - label: Clean & Fix
-    action: clean_and_fix_subtitles
-  - label: Sync Srt
-    action: sub_sync
-  - label: Resync Folder
-    action: subs_resync
-  - label: Check SRT Language
-    action: check_language
-  - label: Translate
-    action: sub_translate
-  help:
-  - label: Show Help
-    action: show_help_dialog
-    icon: ℹ️
-  All:
-  - label: Show LogFile
-    action: show_logfile_all
-    icon: 🔍
-  - label: Show TextFile
-    action: show_textfile_all
-    icon: 🔍
   lbox:
   - label: Select All
     action: select_all_files
@@ -70,6 +16,73 @@ Menus:
   - label: Reveal Files
     action: reveal_selected_in_explorer
     icon: 🧹
+  tbox:
+  - label: Clear Textbox
+    action: clear_this_textbox
+    icon: 🧹
+  help:
+  - label: Show Help
+    action: show_help_dialog
+    icon: ℹ️
+  tb_info:
+  - label: DiskInfo
+    action: diskinfo
+    icon: 🔍
+  - label: Disk InfoBar
+    action: show_disk_info
+    icon: 🔍
+  videos:
+  - label: Play Video
+    action: play_video
+    icon: ▶️
+  - label: Transform -> MKV
+    action: transform_2_mkv
+  - label: MKV -> 8 Bit HEVC
+    action: mkv_2_8bitHEVC
+  - label: Inspect Video Info
+    action: inspect_video_info
+    icon: 🔍
+  - label: Check Subs Language
+    action: mkv_check_lang
+  - label: Extract Subs
+    action: extract_subtitles
+  - label: Download Sub
+    action: download_subtitles_for_selected
+    icon: 🔽
+  - label: Embed Sub
+    action: mkv_embed_sub
+  - label: Remove All Subs
+    action: remove_all_subtitles
+    icon: 🗑️
+  - label: Speech to SRT (Whisper)
+    action: speech_to_srt
+  subtitles:
+  - label: Show SRT File
+    action: show_srt_file
+  - label: Clean & Fix
+    action: clean_and_fix_subtitles
+  - label: Sync Srt
+    action: sub_sync
+  - label: Resync Folder
+    action: subs_resync
+  - label: Check SRT Language
+    action: check_language
+  - label: Translate
+    action: sub_translate
+  batch:
+  - label: Run Batch
+    action: run_batch
+    icon: ⚙️
+  - label: Stop Batch
+    action: stop_batch
+    icon: ⏹️
+  All:
+  - label: Show LogFile
+    action: show_logfile_all
+    icon: 🔍
+  - label: Show TextFile
+    action: show_textfile_all
+    icon: 🔍
   tb_debug:
   - label: Menu Dashboard
     action: launch_menu_dashboard
@@ -77,11 +90,13 @@ Menus:
   - label: Check Config
     action: show_config_popup
     icon: 🔍
+  - label: Bindings Dashboard
+    action: launch_debug_tools
+    icon: 🔗
+  - label: Inspect SharedState
+    action: show_sharedstate_inpector
+    icon: 🔍
   tb_folders:
   - label: 🔄 Refresh
     action: refresh_current_folder
     icon: 🔄
-  tbox:
-  - label: Clear Textbox
-    action: clear_this_textbox
-    icon: 🧹

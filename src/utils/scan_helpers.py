@@ -337,7 +337,20 @@ def browse_folder(entry_key="source"):
 
     smart = entry_info["entry"]
 
-    initial_folder = smart.value if os.path.isdir(smart.value) else None
+    # Resolve the best starting dir: current value → nearest existing parent → home
+    current_value = (smart.value or "").strip()
+    initial_folder = None
+    path_to_check = current_value
+    while path_to_check:
+        if os.path.isdir(path_to_check):
+            initial_folder = path_to_check
+            break
+        parent = os.path.dirname(path_to_check)
+        if parent == path_to_check:
+            break
+        path_to_check = parent
+    if not initial_folder:
+        initial_folder = os.path.expanduser("~")
 
     folder = fd.askdirectory(
         title=f"Select {entry_key.capitalize()} Folder",

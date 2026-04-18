@@ -11,7 +11,17 @@
 
 import customtkinter as ct
 import os
+from pathlib import Path
 # Lazy import: from shared_data import get_shared, get_config
+
+
+def _get_settings_file(name):
+    """Return full path to a config file under src/Settings without importing utils."""
+    base = f"{name}.json"
+    if base.endswith(".json.json"):
+        base = base.replace(".json.json", ".json")
+    root = Path(__file__).resolve().parent.parent
+    return root / "Settings" / base
 
 class Config_Frame(ct.CTkFrame):
     def __init__(self, master, config_mgr=None, config_data=None, **kwargs):
@@ -39,7 +49,7 @@ class Config_Frame(ct.CTkFrame):
         # If not in config_data, load directly from file
         if not self.tools_cfg:
             import json
-            config_file = os.path.join("Settings", "tools_cfg.json")
+            config_file = _get_settings_file("tools_cfg")
             try:
                 if os.path.exists(config_file):
                     with open(config_file, 'r') as f:
@@ -99,6 +109,11 @@ class Config_Frame(ct.CTkFrame):
         self.mkvtoolnix_path_var = ct.StringVar(value=mkvtoolnix_path)
         self.videoplayer_path_var = ct.StringVar(value=videoplayer_path)
 
+        # Whisper settings
+        self.whisper_model_var = ct.StringVar(value=self.cfg.get("WhisperModel", "medium"))
+        self.whisper_device_var = ct.StringVar(value=self.cfg.get("WhisperDevice", "cuda"))
+        self.whisper_lang_var = ct.StringVar(value=self.cfg.get("WhisperLanguage", "eng"))
+
     def _build_ui(self):
         self._build_option("Language", self.langs, self.lang_var, 0, "Language")
         ct.CTkLabel(self, text="").grid(row=1, column=0, columnspan=2)
@@ -121,12 +136,13 @@ class Config_Frame(ct.CTkFrame):
 
         ct.CTkLabel(self, text="").grid(row=12, column=0, columnspan=2)
         self._build_subtitle_method_options(start_row=13)
-        
-        ct.CTkLabel(self, text="").grid(row=15, column=0, columnspan=2)
+
+        ct.CTkLabel(self, text="").grid(row=16, column=0, columnspan=2)
 
         # Voeg BaseDir widget toe vóór de externe tools
-        self._build_basedir_row(row=16)
-        self._build_tool_paths_section(start_row=17)
+        self._build_basedir_row(row=17)
+        self._build_tool_paths_section(start_row=18)
+        self._build_whisper_section(start_row=24)
 
     def _build_basedir_row(self, row):
         import os, json, sys
@@ -246,6 +262,131 @@ class Config_Frame(ct.CTkFrame):
             self, text="OpenSubtitles API", variable=self.method_var,
             value="api", command=save_method
         ).grid(row=start_row + 1, column=1, sticky="w", padx=5)
+
+        # FileBot maintenance tools directly in Settings UI (under Subtitle Method)
+        ct.CTkLabel(self, text="FileBot Tools").grid(
+            row=start_row + 2, column=0, sticky="nw", padx=5, pady=(8, 5)
+        )
+
+        tools_frame = ct.CTkFrame(self, fg_color="transparent")
+        tools_frame.grid(row=start_row + 2, column=1, columnspan=2, sticky="w", padx=5, pady=(6, 4))
+
+        def run_configure():
+            try:
+                from actions.lb_files.subtitles.download import get_filebot_credentials, configure_filebot_from_api_cfg
+                from utils.shared_utils import get_settings_file
+                import json
+
+                cur_user, cur_pass = get_filebot_credentials()
+
+                dialog = ct.CTkToplevel(self)
+                dialog.title("FileBot Credentials")
+                dialog.geometry("380x200")
+                dialog.grab_set()
+                dialog.resizable(False, False)
+
+                ct.CTkLabel(dialog, text="OpenSubtitles Username:").grid(row=0, column=0, sticky="w", padx=12, pady=(18, 4))
+                user_var = ct.StringVar(value=cur_user or "")
+                ct.CTkEntry(dialog, textvariable=user_var, width=200).grid(row=0, column=1, padx=8, pady=(18, 4))
+
+                ct.CTkLabel(dialog, text="OpenSubtitles Password:").grid(row=1, column=0, sticky="w", padx=12, pady=4)
+                pass_var = ct.StringVar(value=cur_pass or "")
+                ct.CTkEntry(dialog, textvariable=pass_var, show="*", width=200).grid(row=1, column=1, padx=8, pady=4)
+
+                def save_and_apply():
+                    u = user_var.get().strip()
+                    p = pass_var.get().strip()
+                    if not u or not p:
+                        from tkinter import messagebox as mb
+                        mb.showwarning("FileBot Configure", "Vul zowel username als password in.", parent=dialog)
+                        return
+                    try:
+                        cfg_path = get_settings_file("API_cfg")
+                        with open(cfg_path, "r", encoding="utf-8") as fh:
+                            data = json.load(fh)
+                        data.setdefault("filebot", {})
+                        data["filebot"]["username"] = u
+                        data["filebot"]["password"] = p
+                        with open(cfg_path, "w", encoding="utf-8") as fh:
+                            json.dump(data, fh, indent=4)
+                        # Also reload into live config if possible
+                        try:
+                            from shared_data import get_shared
+                            get_shared().config["API_cfg"] = data
+                        except Exception:
+                            pass
+                        dialog.destroy()
+                        configure_filebot_from_api_cfg()
+                    except Exception as ex:
+                        from tkinter import messagebox as mb
+                        mb.showerror("FileBot Configure", str(ex), parent=dialog)
+
+                btn_frame = ct.CTkFrame(dialog, fg_color="transparent")
+                btn_frame.grid(row=2, column=0, columnspan=2, pady=(14, 0))
+                ct.CTkButton(btn_frame, text="Opslaan & Toepassen", command=save_and_apply, width=160).grid(row=0, column=0, padx=6)
+                ct.CTkButton(btn_frame, text="Annuleren", command=dialog.destroy, width=100).grid(row=0, column=1, padx=6)
+
+            except Exception as e:
+                import tkinter.messagebox as mb
+                mb.showerror("FileBot Configure", str(e))
+
+        def run_test():
+            import os
+            from utils.text_helpers import update_tbsettings
+            try:
+                filebot_data = os.environ.get("FILEBOT_DATA") or r"C:\Video\Filebot\data"
+                settings_path = os.path.join(filebot_data, "settings.properties")
+                login_key = "net/filebot/login/OpenSubtitles"
+                if os.path.exists(settings_path):
+                    with open(settings_path, "r", encoding="utf-8", errors="replace") as fh:
+                        for line in fh:
+                            if line.startswith(login_key + "="):
+                                value = line.split("=", 1)[1].strip()
+                                parts = value.split("\\t", 1)
+                                user = parts[0].strip()
+                                pwd  = parts[1].strip() if len(parts) > 1 else ""
+                                if user and pwd:
+                                    update_tbsettings(f"✅ FileBot credentials gevonden — Gebruiker: {user}", "groen")
+                                elif user:
+                                    update_tbsettings(f"⚠️ Gebruiker '{user}' gevonden maar wachtwoord is leeg.", "geel")
+                                return
+                    update_tbsettings("❌ Geen OpenSubtitles credentials in FileBot settings. Gebruik Configure.", "rood")
+                else:
+                    update_tbsettings(f"❌ FileBot settings.properties niet gevonden: {settings_path}", "rood")
+            except Exception as ex:
+                update_tbsettings(f"❌ Fout: {ex}", "rood")
+
+        def run_clear_cache():
+            try:
+                from actions.lb_files.subtitles.download import clear_filebot_cache
+                clear_filebot_cache()
+            except Exception as e:
+                import tkinter.messagebox as mb
+                mb.showerror("FileBot Clear Cache", str(e))
+
+        ct.CTkButton(
+            tools_frame,
+            text="Configure",
+            width=160,
+            anchor="w",
+            command=run_configure,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+
+        ct.CTkButton(
+            tools_frame,
+            text="Test Login",
+            width=160,
+            anchor="w",
+            command=run_test,
+        ).grid(row=1, column=0, sticky="w", pady=(0, 4))
+
+        ct.CTkButton(
+            tools_frame,
+            text="Clear Cache",
+            width=160,
+            anchor="w",
+            command=run_clear_cache,
+        ).grid(row=2, column=0, sticky="w")
     
     def _build_tool_paths_section(self, start_row):
         """Build the external tools configuration section"""
@@ -303,7 +444,7 @@ class Config_Frame(ct.CTkFrame):
                 self.tools_cfg[key] = path
                 
                 # Save to file
-                config_file = os.path.join("Settings", "tools_cfg.json")
+                config_file = _get_settings_file("tools_cfg")
                 try:
                     with open(config_file, 'w') as f:
                         json.dump(self.tools_cfg, f, indent=4)
@@ -318,6 +459,29 @@ class Config_Frame(ct.CTkFrame):
         build_path_row("FFprobe", self.ffprobe_path_var, start_row + 2, "ffprobe_path")
         build_path_row("MKVToolNix", self.mkvtoolnix_path_var, start_row + 3, "mkvtoolnix_path")
         build_path_row("Video Player", self.videoplayer_path_var, start_row + 4, "videoplayer_path", is_directory=False)
+
+    def _build_whisper_section(self, start_row):
+        """Whisper speech-to-SRT instellingen"""
+        whisper_models = ["tiny", "base", "small", "medium", "large-v3"]
+        whisper_devices = ["cuda", "cpu"]
+        whisper_langs = ["en", "auto", "nl", "fr", "de", "es", "it", "pt", "ja", "zh"]
+
+        ct.CTkLabel(self, text="Whisper (Speech→SRT)", font=("Arial", 12, "bold")).grid(
+            row=start_row, column=0, columnspan=2, sticky="w", padx=5, pady=(10, 5)
+        )
+
+        def save_whisper(key, var):
+            from utils import log_settings
+            value = var.get()
+            self.cfg[key] = value
+            log_settings(f"✅ {key}: {value}")
+
+        self._build_option("Model", whisper_models, self.whisper_model_var,
+                           start_row + 1, "WhisperModel")
+        self._build_option("Device", whisper_devices, self.whisper_device_var,
+                           start_row + 2, "WhisperDevice")
+        self._build_option("Language", whisper_langs, self.whisper_lang_var,
+                           start_row + 3, "WhisperLanguage")
 
     def _apply_display_mode(self, value):
         self.cfg["Display_Mode"] = value

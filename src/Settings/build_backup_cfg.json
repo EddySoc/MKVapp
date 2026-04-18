@@ -1,0 +1,16 @@
+{
+    "build": {
+        "BuildIcon": "",
+        "BuildOutputDir": "C:/Builds/MKVApp",
+        "BuildConsoleMode": false,
+        "BuildUpxCompression": true,
+        "BuildCleanBuild": true,
+        "BuildMode": "Fast Onedir (faster startup)"
+    },
+    "backup": {
+        "BackupDir": "C:/Backups/MKVApp",
+        "IncludeVenv": false,
+        "IncludePycache": false,
+        "IncludeBuild": false
+    }
+}

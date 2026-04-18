@@ -14,7 +14,7 @@ from tkinter import StringVar
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from widgets import MyFrame, BaseTBox, FilterListBox, Config_Frame, Debug_Frame
+from widgets import MyFrame, BaseTBox, BatchPanel, FilterListBox, Config_Frame, Debug_Frame
 from widgets import ThemedEntry, SmartEntry
 from utils.scan_helpers import apply_segment_filter, on_toggle, register_widget, update_entry_styles, update_segbut_colors
 from shared_data import get_shared
@@ -44,9 +44,13 @@ def build_layout(app,config_data,config_mgr):
 
     app.tabview = tabview
 
+    # Debug: print before and after tab creation
+    print("[DEBUG] build_layout: starting tab creation")
     app.last_row = setup_info_tab(app, tabview, padding,config)
+    setup_batch_tab(app, tabview, padding)
     setup_settings_tab(app, tabview, padding,config)
     setup_debug_tab(app,tabview,padding)
+    print("[DEBUG] Tabs after creation:", list(tabview._tab_dict.keys()))
 
 def setup_info_tab(app, tabview, padding,config):
     tabview.add("Info")
@@ -286,8 +290,10 @@ def setup_settings_tab(app, tabview, padding, config):
     left_scroll.grid_columnconfigure((0, 1), weight=1)
     left_scroll.grid_columnconfigure(2, weight=10)
 
+    print("[DEBUG] setup_settings_tab called")
     app.config_frame = Config_Frame(left_scroll, config_data=config)
     app.config_frame.grid(row=0, column=0, sticky="nsew")
+    print("[DEBUG] setup_settings_tab finished")
 
 
 
@@ -466,4 +472,32 @@ def setup_debug_tab(app, tabview, padding):
     # Force instance registration for debug output
     from widgets.base_textbox import BaseTBox
     BaseTBox.instances['tb_debug'] = app.tb_debug
+
+
+def setup_batch_tab(app, tabview, padding):
+    tabview.add("Batch")
+    batch_tab = tabview.tab("Batch")
+
+    app.batch_tab = batch_tab
+    batch_tab.custom_name = "batch_tab"
+
+    batch_tab.grid_columnconfigure(0, weight=1)
+    batch_tab.grid_rowconfigure(0, weight=0)
+    batch_tab.grid_rowconfigure(1, weight=1)
+
+    info = ct.CTkLabel(
+        batch_tab,
+        text=(
+            "Stel een batch samen: selecteer acties links en voeg ze toe aan de wachtrij rechts.\n"
+            "Selecteer vervolgens bestanden in lb_files (Info-tab) en kies  'Run Batch'  via het contextmenu."
+        ),
+        justify="left",
+        anchor="w",
+        wraplength=900,
+        text_color="gray",
+    )
+    info.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+
+    app.batch_panel = BatchPanel(batch_tab)
+    app.batch_panel.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
 

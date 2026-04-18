@@ -1,6 +1,6 @@
 {
-    "mkvtoolnix_path": "C:/Video/mkvtoolnix",
-    "ffmpeg_path": "C:/Video/ffmpeg",
-    "ffprobe_path": "C:/Video/ffmpeg",
-    "videoplayer_path": "C:/Video/PotPlayer/PotPlayerPortable.exe"
+    "mkvtoolnix_path": "C:/Tools/MKVToolNix",
+    "ffmpeg_path": "C:/Tools/ffmpeg/bin",
+    "ffprobe_path": "C:/Tools/ffmpeg/bin",
+    "videoplayer_path": "C:/Tools/VLC/vlc.exe"
 }

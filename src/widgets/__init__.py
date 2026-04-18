@@ -1,4 +1,5 @@
 from .base_textbox import BaseTBox
+from .batch_panel import BatchPanel
 from .config_frame import Config_Frame
 from .data_inspector import DataInspector, show_data_inspector
 from .debug_console import DebugConsole

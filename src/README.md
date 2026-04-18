@@ -12,7 +12,7 @@ Quick build (development)
 ```powershell
 python -m venv .venv
 & .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install --extra-index-url https://download.pytorch.org/whl/cu124 -r requirements.txt
 ```
 
 2. Run the app in-place

@@ -18,7 +18,30 @@ def create_gui_menu(tree, parent_menu):
         submenu = tk.Menu(parent_menu, tearoff=0)
         parent_menu.add_cascade(label=category, menu=submenu)
 
-        for item in items:
+        # Force custom order for 'videos' menu
+        if category == "videos":
+            desired_order = [
+                "Play Video",
+                "Transform -> MKV",
+                "MKV -> 8 Bit HEVC",
+                "Inspect Video Info",
+                "Check Subs Language",
+                "Extract Subs",
+                "Download Sub",
+                "Embed Sub",
+                "Remove All Subs",
+                "Speech to SRT (Whisper)"
+            ]
+            # Maak een dict van label → item
+            item_map = {item.get("label", "Unnamed"): item for item in items}
+            # Sorteer volgens gewenste volgorde, rest achteraan
+            sorted_items = [item_map[label] for label in desired_order if label in item_map]
+            # Voeg overige items toe die niet in desired_order staan
+            sorted_items += [item for label, item in item_map.items() if label not in desired_order]
+        else:
+            sorted_items = items
+
+        for item in sorted_items:
             label = item.get("label", "Unnamed")
             action_name = item.get("action")
             entry = global_menu_registry.get(action_name)

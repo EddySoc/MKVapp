@@ -5,7 +5,7 @@
     },
     "groen": {
         "background": "black",
-        "foreground": "green"
+        "foreground": "#00e676"
     },
     "rood": {
         "background": "red",

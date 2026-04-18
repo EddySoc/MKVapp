@@ -17,6 +17,13 @@ import importlib
 import inspect
 from pathlib import Path
 
+# Core popup actions that must always be available in frozen builds.
+CRITICAL_ACTION_MODULES = [
+    "actions.lbox.common",   # Select All / Deselect All / Delete Files / Reveal Files
+    "actions.tbox.common",   # Clear Textbox
+    "actions.help.help",     # Show Help
+]
+
 def get_menu_group(filepath, base_path):
     """
     Resolves the menu group from a file path relative to the base actions folder.
@@ -38,16 +45,28 @@ def load_all_actions():
 
     from menus.menu_registry import global_menu_registry
     base_package = "actions"
-    # Fix: Go up one level from menus/ to project_root/, then into actions/
+    # Go up one level from menus/ to project_root/, then into actions/
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     base_path = os.path.join(project_root, "actions")
+
+    try:
+        actions_pkg = importlib.import_module(base_package)
+        scan_paths = list(getattr(actions_pkg, "__path__", [])) or [base_path]
+    except Exception:
+        scan_paths = [base_path]
+
     seen_modules = set()
     seen_files = set()
 
-    print(f"🚀 Scanning actions package for tagged menu functions...")
-    print(f"📂 Base path: {base_path}\n")
-
     module_function_map = {}
+
+    # Ensure critical action modules are imported first.
+    # This also helps PyInstaller pick them up via static import analysis.
+    for mod_name in CRITICAL_ACTION_MODULES:
+        try:
+            importlib.import_module(mod_name)
+        except Exception as ex:
+            print(f"⚠️ Failed to import critical action module {mod_name}: {ex}")
 
 
     def import_submodules_recursively(module_name, module_path):
@@ -59,9 +78,15 @@ def load_all_actions():
                 if is_subpkg and sub_spec and sub_spec.submodule_search_locations:
                     import_submodules_recursively(sub_name, sub_spec.submodule_search_locations[0])
             except Exception as ex:
+                if isinstance(ex, ModuleNotFoundError):
+                    missing_name = str(ex)
+                    if "torch" in missing_name or "pyperclip" in missing_name:
+                        continue
+                if getattr(sys, 'frozen', False) and isinstance(ex, FileNotFoundError):
+                    continue
                 print(f"⚠️ Failed to import submodule {sub_name}: {ex}")
 
-    for finder, name, ispkg in pkgutil.walk_packages([base_path], prefix=f"{base_package}."):
+    for finder, name, ispkg in pkgutil.walk_packages(scan_paths, prefix=f"{base_package}."):
         if name in seen_modules:
             continue
 
@@ -70,12 +95,13 @@ def load_all_actions():
             if not spec or not spec.origin or spec.origin in seen_files:
                 continue
 
-            # 🧠 Skip __init__.py-only modules with no other .py files
+            # Skip __init__.py-only modules with no other .py files (filesystem only)
             if spec.origin.endswith("__init__.py"):
                 folder = os.path.dirname(spec.origin)
-                py_files = [f for f in os.listdir(folder) if f.endswith(".py") and f != "__init__.py"]
-                if not py_files:
-                    continue
+                if os.path.isdir(folder):
+                    py_files = [f for f in os.listdir(folder) if f.endswith(".py") and f != "__init__.py"]
+                    if not py_files:
+                        continue
 
             seen_modules.add(name)
             seen_files.add(spec.origin)
@@ -124,6 +150,10 @@ def load_all_actions():
                     module_function_map[group] = []
                 module_function_map[group].extend(tagged_funcs)
         except Exception as ex:
+            if getattr(sys, 'frozen', False) and isinstance(ex, FileNotFoundError):
+                continue
+            if isinstance(ex, ModuleNotFoundError) and "torch" in str(ex):
+                continue
             print(f"⚠️ Failed to import {name}: {ex}")
 
     # Summary

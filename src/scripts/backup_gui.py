@@ -1,18 +1,11 @@
 """
-MKVApp Backup GUI (moved to scripts)
-"""
-
-import customtkinter as ctk
-from tkinter import filedialog, messagebox
-import os
-import sys
-"""
 MKVApp Backup GUI
-Graphical interface for creating source code backups
+Graphical interface for creating source code backups.
 """
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+import json
 import os
 import sys
 import subprocess
@@ -42,6 +35,8 @@ class BackupGUI(ctk.CTk):
         self.include_pycache = ctk.BooleanVar(value=False)
         self.include_build = ctk.BooleanVar(value=False)
         self.source_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.settings_file = os.path.join(self.source_dir, "Settings", "build_backup_cfg.json")
+        self.load_settings()
         self.is_backing_up = False
         self.progress_dots = 0
         self.progress_animation_id = None
@@ -51,6 +46,57 @@ class BackupGUI(ctk.CTk):
         
         # Load recent backups
         self.refresh_backup_list()
+
+    def load_settings(self):
+        """Load backup GUI settings from shared build/backup config file."""
+        try:
+            if not os.path.exists(self.settings_file):
+                return
+
+            with open(self.settings_file, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+
+            if not isinstance(settings, dict):
+                return
+
+            backup_settings = settings.get('backup', {})
+            if not isinstance(backup_settings, dict):
+                return
+
+            if 'BackupDir' in backup_settings:
+                self.backup_dir.set(backup_settings['BackupDir'])
+            if 'IncludeVenv' in backup_settings:
+                self.include_venv.set(bool(backup_settings['IncludeVenv']))
+            if 'IncludePycache' in backup_settings:
+                self.include_pycache.set(bool(backup_settings['IncludePycache']))
+            if 'IncludeBuild' in backup_settings:
+                self.include_build.set(bool(backup_settings['IncludeBuild']))
+        except Exception as e:
+            print(f"Error loading backup settings: {e}")
+
+    def save_settings(self):
+        """Save backup GUI settings to shared build/backup config file."""
+        try:
+            settings = {}
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+
+            if not isinstance(settings, dict):
+                settings = {}
+
+            settings.setdefault('build', {})
+            settings['backup'] = {
+                'BackupDir': self.backup_dir.get(),
+                'IncludeVenv': self.include_venv.get(),
+                'IncludePycache': self.include_pycache.get(),
+                'IncludeBuild': self.include_build.get(),
+            }
+
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving backup settings: {e}")
         
     def create_widgets(self):
         # Main container with padding
@@ -234,6 +280,7 @@ class BackupGUI(ctk.CTk):
         )
         if directory:
             self.backup_dir.set(directory)
+            self.save_settings()
     
     def create_backup(self):
         """Create backup in separate thread"""
@@ -246,6 +293,9 @@ class BackupGUI(ctk.CTk):
         if not backup_path:
             messagebox.showerror("Error", "Please select a backup location!")
             return
+
+        # Save current backup options/location
+        self.save_settings()
         
         # Start backup in thread
         self.is_backing_up = True

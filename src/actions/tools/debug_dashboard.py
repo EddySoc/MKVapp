@@ -11,10 +11,14 @@
 
 import tkinter as tk
 import customtkinter as ctk
-import pyperclip
 import sys
 import os
 from decorators.decorators import menu_tag
+
+try:
+    import pyperclip
+except ImportError:
+    pyperclip = None
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "widgets")))
 
@@ -151,7 +155,16 @@ def entry_state_to_clipboard(shared):
             lines.append(f"{name}: fg={fg}, text={txt}, inverted={inverted}")
         except Exception as e:
             lines.append(f"{name}: ⚠️ {e}")
-    pyperclip.copy("\n".join(lines))
+    text = "\n".join(lines)
+    if pyperclip:
+        pyperclip.copy(text)
+    else:
+        root = tk.Tk()
+        root.withdraw()
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update_idletasks()
+        root.destroy()
     print("✅ Entry state copied to clipboard")
 
 def show_color_preview(shared):
@@ -238,7 +251,15 @@ def open_debug_dashboard(app, shared, binding_manager):
 def copy_output(widget):
     try:
         txt = widget.get("1.0", "end")
-        pyperclip.copy(txt)
+        if pyperclip:
+            pyperclip.copy(txt)
+        else:
+            root = tk.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(txt)
+            root.update_idletasks()
+            root.destroy()
         print("✅ Bindings copied to clipboard")
     except Exception as e:
         print(f"⚠️ Copy failed: {e}")

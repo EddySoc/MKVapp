@@ -51,10 +51,12 @@ class FilterListBox(ct.CTkFrame):
         self.entry.bind("<FocusIn>", lambda e: self._update_focus_styles(self.entry))
         self.entry.bind("<FocusOut>", lambda e: self._update_focus_styles(None))
 
-        self.listbox = CTkListbox(outer, multiple_selection=True, fg_color="black", text_color="white")
+        self.listbox = CTkListbox(outer, multiple_selection=True, hover=False, fg_color="black", text_color="white")
         self.listbox.grid(row=1, column=0, sticky="nsew", padx=3, pady=3)
         self.listbox.bind("<FocusIn>", lambda e: self._update_focus_styles(self.listbox))
         self.listbox.bind("<FocusOut>", lambda e: self._update_focus_styles(None))
+
+        self._patch_listbox_buttons_hover()
 
         self._patch_listbox_delete_all()
 
@@ -124,6 +126,50 @@ class FilterListBox(ct.CTkFrame):
         
         # Start binding from self
         bind_to_all(self)
+
+    def _patch_listbox_buttons_hover(self):
+        """Add a reliable hover highlight that does NOT interfere with selection state.
+
+        CTkListbox uses hover=False here, so CTkButton never auto-resets the
+        fg_color on <Leave>. We manually bind <Enter>/<Leave> on each new button
+        via a patched insert() so that:
+        - hovered + unselected → hover_color shown temporarily
+        - hovered + selected   → select_color stays (we never overwrite select)
+        - leave                → original fg_color restored (transparent or select_color)
+        """
+        HOVER_COLOR = "#2a5fa5"   # subtle hover tint for unselected items
+        original_insert = self.listbox.insert
+
+        def patched_insert(index, option, update=True, **args):
+            btn = original_insert(index, option, update=update, **args)
+            if btn is None:
+                return btn
+
+            def on_enter(e, b=btn):
+                try:
+                    if b not in self.listbox.selections:
+                        b.configure(fg_color=HOVER_COLOR)
+                except Exception:
+                    pass
+
+            def on_leave(e, b=btn):
+                try:
+                    if b not in self.listbox.selections:
+                        b.configure(fg_color=self.listbox.button_fg_color)
+                except Exception:
+                    pass
+
+            btn.bind("<Enter>", on_enter, add="+")
+            btn.bind("<Leave>", on_leave, add="+")
+            # Also bind on the inner text label
+            try:
+                btn._text_label.bind("<Enter>", on_enter, add="+")
+                btn._text_label.bind("<Leave>", on_leave, add="+")
+            except Exception:
+                pass
+            return btn
+
+        self.listbox.insert = patched_insert
 
     def _patch_listbox_delete_all(self):
         original_delete = self.listbox.delete
@@ -241,19 +287,7 @@ class FilterListBox(ct.CTkFrame):
             self.listbox.configure(font=self.s.CTK_FONT)
 
     def _update_focus_styles(self, focused_widget=None):
-        entry_default = {"fg_color": "white", "border_color": "grey"}
-        entry_highlight = {"fg_color": "#e0f7ff", "border_color": "#00aaff"}
-        listbox_default = {"border_color": "grey"}
-        listbox_highlight = {"border_color": "#00aaff"}
-
-        self.entry.configure(**entry_default)
-        self.listbox.configure(**listbox_default)
-
-        if focused_widget == self.entry:
-            self.entry.configure(**entry_highlight)
-        elif focused_widget == self.listbox:
-            self.listbox.configure(**listbox_highlight)
-        entry_default = {"fg_color": "white", "border_color": "grey"}
+        entry_default = {"fg_color": "transparent", "border_color": "grey"}
         entry_highlight = {"fg_color": "#e0f7ff", "border_color": "#00aaff"}
         listbox_default = {"border_color": "grey"}
         listbox_highlight = {"border_color": "#00aaff"}
