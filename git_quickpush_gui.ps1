@@ -26,6 +26,48 @@ function Invoke-Git {
     return $LASTEXITCODE
 }
 
+function Get-GitRepoRoot {
+    param([string]$StartPath)
+
+    if ([string]::IsNullOrWhiteSpace($StartPath) -or -not (Test-Path $StartPath)) {
+        return $null
+    }
+
+    $resolvedPath = (Resolve-Path $StartPath).Path
+    $result = & git -C $resolvedPath rev-parse --show-toplevel 2>$null
+    if ($LASTEXITCODE -eq 0 -and $result) {
+        return ($result | Select-Object -First 1).Trim()
+    }
+
+    return $null
+}
+
+function Get-GitOriginUrl {
+    param([string]$RepoPath)
+
+    $result = & git -C $RepoPath remote get-url origin 2>$null
+    if ($LASTEXITCODE -eq 0 -and $result) {
+        return ($result | Select-Object -First 1).Trim()
+    }
+
+    return $null
+}
+
+function Initialize-GitRepository {
+    param([string]$RepoPath)
+
+    Write-Log "`nNieuwe git-repository initialiseren in:" ([System.Drawing.Color]::Cyan)
+    Write-Log "  $RepoPath" ([System.Drawing.Color]::Cyan)
+
+    $exitCode = Invoke-Git -GitArgs @("init")
+    if ($exitCode -ne 0) {
+        Write-Log "`nGit init mislukt." ([System.Drawing.Color]::Salmon)
+        return $false
+    }
+
+    return $true
+}
+
 # ─── Formulier bouwen ──────────────────────────────────────────────────────
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Git Quick Push"
@@ -87,10 +129,27 @@ $txtMsg.ForeColor = [System.Drawing.Color]::White
 $txtMsg.BorderStyle = "FixedSingle"
 $form.Controls.Add($txtMsg)
 
+# Label: GitHub remote URL
+$lblRemote = New-Object System.Windows.Forms.Label
+$lblRemote.Text = "GitHub URL (optioneel):"
+$lblRemote.Location = New-Object System.Drawing.Point(15, 95)
+$lblRemote.Size = New-Object System.Drawing.Size(120, 22)
+$form.Controls.Add($lblRemote)
+
+# Tekstveld: GitHub remote URL
+$txtRemote = New-Object System.Windows.Forms.TextBox
+$txtRemote.Location = New-Object System.Drawing.Point(140, 93)
+$txtRemote.Size = New-Object System.Drawing.Size(495, 24)
+$txtRemote.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+$txtRemote.ForeColor = [System.Drawing.Color]::White
+$txtRemote.BorderStyle = "FixedSingle"
+$txtRemote.Text = "https://github.com/"
+$form.Controls.Add($txtRemote)
+
 # Checkbox: force push
 $chkForce = New-Object System.Windows.Forms.CheckBox
 $chkForce.Text = "Force push (--force) — gebruik alleen als jij de enige ontwikkelaar bent"
-$chkForce.Location = New-Object System.Drawing.Point(15, 90)
+$chkForce.Location = New-Object System.Drawing.Point(15, 130)
 $chkForce.Size = New-Object System.Drawing.Size(620, 22)
 $chkForce.ForeColor = [System.Drawing.Color]::Orange
 $form.Controls.Add($chkForce)
@@ -98,7 +157,7 @@ $form.Controls.Add($chkForce)
 # Knop: Push uitvoeren
 $btnPush = New-Object System.Windows.Forms.Button
 $btnPush.Text = "Commit && Push naar GitHub"
-$btnPush.Location = New-Object System.Drawing.Point(15, 122)
+$btnPush.Location = New-Object System.Drawing.Point(15, 162)
 $btnPush.Size = New-Object System.Drawing.Size(620, 34)
 $btnPush.BackColor = [System.Drawing.Color]::FromArgb(0, 122, 204)
 $btnPush.ForeColor = [System.Drawing.Color]::White
@@ -108,8 +167,8 @@ $form.Controls.Add($btnPush)
 
 # Logvenster
 $txtLog = New-Object System.Windows.Forms.RichTextBox
-$txtLog.Location = New-Object System.Drawing.Point(15, 168)
-$txtLog.Size = New-Object System.Drawing.Size(620, 320)
+$txtLog.Location = New-Object System.Drawing.Point(15, 208)
+$txtLog.Size = New-Object System.Drawing.Size(620, 280)
 $txtLog.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 20)
 $txtLog.ForeColor = [System.Drawing.Color]::LightGray
 $txtLog.ReadOnly = $true
@@ -149,25 +208,72 @@ $btnPush.Add_Click({
     $txtLog.Clear()
     $projectPath = $txtFolder.Text.Trim()
     $commitMsg   = $txtMsg.Text.Trim()
+    $remoteUrlInput = $txtRemote.Text.Trim()
     $forcePush   = $chkForce.Checked
+    $repoRoot    = $null
+    $isNewRepo   = $false
+    $originUrl   = $null
 
     # Validaties
     if ([string]::IsNullOrWhiteSpace($projectPath)) {
         Write-Log "Fout: kies eerst een projectmap." ([System.Drawing.Color]::Salmon)
         return
     }
-    if (-not (Test-Path (Join-Path $projectPath ".git"))) {
-        Write-Log "Fout: '$projectPath' is geen git-repository." ([System.Drawing.Color]::Salmon)
-        return
+    $repoRoot = Get-GitRepoRoot -StartPath $projectPath
+    if (-not $repoRoot) {
+        if (-not (Test-Path $projectPath)) {
+            Write-Log "Fout: '$projectPath' bestaat niet." ([System.Drawing.Color]::Salmon)
+            return
+        }
+
+        $answer = [System.Windows.Forms.MessageBox]::Show(
+            "Deze map is nog geen git-repository.`n`nWil je hier automatisch een nieuwe git-repository aanmaken?",
+            "Nieuwe Git-repository",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question
+        )
+
+        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+            Write-Log "Actie geannuleerd: geen bestaande git-repository gevonden." ([System.Drawing.Color]::Yellow)
+            return
+        }
+
+        $repoRoot = $projectPath
+        $isNewRepo = $true
     }
     if ([string]::IsNullOrWhiteSpace($commitMsg)) {
         Write-Log "Fout: vul een commit message in." ([System.Drawing.Color]::Salmon)
         return
     }
+    if ($remoteUrlInput -eq "https://github.com/") {
+        $remoteUrlInput = ""
+    }
+
+    if ($repoRoot -ne $projectPath) {
+        Write-Log "Gekozen map ligt binnen git-repository:" ([System.Drawing.Color]::Khaki)
+        Write-Log "  $repoRoot" ([System.Drawing.Color]::Khaki)
+        $txtFolder.Text = $repoRoot
+    }
 
     # Navigeer naar projectmap
-    Push-Location $projectPath
+    Push-Location $repoRoot
     try {
+        if ($isNewRepo) {
+            if (-not (Initialize-GitRepository -RepoPath $repoRoot)) {
+                return
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($remoteUrlInput)) {
+                Write-Log "`nOrigin remote instellen..." ([System.Drawing.Color]::Cyan)
+                $exitCode = Invoke-Git -GitArgs @("remote", "add", "origin", $remoteUrlInput)
+                if ($exitCode -ne 0) {
+                    Write-Log "`nOrigin remote kon niet ingesteld worden." ([System.Drawing.Color]::Salmon)
+                    return
+                }
+                $originUrl = $remoteUrlInput
+            }
+        }
+
         # VS Code Save All
         $codeCmd = Get-Command code -ErrorAction SilentlyContinue
         if ($codeCmd) {
@@ -203,17 +309,49 @@ $btnPush.Add_Click({
         }
 
         # Push
-        Write-Log "`nPushen naar GitHub..." ([System.Drawing.Color]::Cyan)
-        if ($forcePush) {
-            $exitCode = Invoke-Git -GitArgs @("push", "--force")
-        } else {
-            $exitCode = Invoke-Git -GitArgs @("push")
+        $originUrl = Get-GitOriginUrl -RepoPath $repoRoot
+        if ([string]::IsNullOrWhiteSpace($originUrl) -and -not [string]::IsNullOrWhiteSpace($remoteUrlInput) -and -not $isNewRepo) {
+            Write-Log "`nOrigin remote instellen..." ([System.Drawing.Color]::Cyan)
+            $exitCode = Invoke-Git -GitArgs @("remote", "add", "origin", $remoteUrlInput)
+            if ($exitCode -ne 0) {
+                Write-Log "`nOrigin remote kon niet ingesteld worden." ([System.Drawing.Color]::Salmon)
+                return
+            }
+            $originUrl = Get-GitOriginUrl -RepoPath $repoRoot
         }
 
-        if ($exitCode -ne 0) {
-            Write-Log "`nPush mislukt! Probeer 'Force push' aan te vinken als jij de enige ontwikkelaar bent." ([System.Drawing.Color]::Salmon)
+        if (-not [string]::IsNullOrWhiteSpace($originUrl)) {
+            Write-Log "`nPushen naar GitHub..." ([System.Drawing.Color]::Cyan)
+            if ($isNewRepo) {
+                $exitCode = Invoke-Git -GitArgs @("branch", "-M", "master")
+                if ($exitCode -ne 0) {
+                    Write-Log "`nBranch kon niet op 'master' gezet worden." ([System.Drawing.Color]::Salmon)
+                    return
+                }
+            }
+
+            if ($forcePush) {
+                if ($isNewRepo) {
+                    $exitCode = Invoke-Git -GitArgs @("push", "--force", "-u", "origin", "master")
+                } else {
+                    $exitCode = Invoke-Git -GitArgs @("push", "--force")
+                }
+            } else {
+                if ($isNewRepo) {
+                    $exitCode = Invoke-Git -GitArgs @("push", "-u", "origin", "master")
+                } else {
+                    $exitCode = Invoke-Git -GitArgs @("push")
+                }
+            }
+
+            if ($exitCode -ne 0) {
+                Write-Log "`nPush mislukt! Probeer 'Force push' aan te vinken als jij de enige ontwikkelaar bent." ([System.Drawing.Color]::Salmon)
+            } else {
+                Write-Log "`nKlaar! Je wijzigingen staan nu op GitHub." ([System.Drawing.Color]::LightGreen)
+                $txtMsg.Clear()
+            }
         } else {
-            Write-Log "`nKlaar! Je wijzigingen staan nu op GitHub." ([System.Drawing.Color]::LightGreen)
+            Write-Log "`nGeen origin remote gevonden. Commit is lokaal aangemaakt, maar nog niet gepusht." ([System.Drawing.Color]::Khaki)
             $txtMsg.Clear()
         }
     } finally {
