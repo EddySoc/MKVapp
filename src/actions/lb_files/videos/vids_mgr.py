@@ -17,7 +17,38 @@ import json
 from pathlib import Path
 from utils.text_helpers import tb_update
 
-print("🎬 Loading videos/vids_mgr.py - registering Remove All Subs")
+print("Loading videos/vids_mgr.py - registering Remove All Subs")
+
+LEGACY_ONE_LETTER_LANG = {
+    "d": "dut",
+    "e": "eng",
+    "f": "fre",
+    "g": "ger",
+    "n": "nld",
+    "s": "spa",
+}
+
+
+def normalize_stream_language(lang):
+    if not lang:
+        return "und"
+    value = str(lang).strip().lower()
+    if len(value) == 1:
+        return LEGACY_ONE_LETTER_LANG.get(value, value)
+    return value
+
+
+def _no_console_subprocess_kwargs():
+    """Hide console windows for CLI tools when the app runs without a console."""
+    if os.name != 'nt':
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    return {
+        'startupinfo': startupinfo,
+        'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    }
 
 @menu_tag(label="Play Video", icon="▶️", group="videos")
 def play_video():
@@ -142,7 +173,7 @@ def get_video_duration(video_path):
         video_path
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, **_no_console_subprocess_kwargs())
         if result.returncode == 0 and result.stdout.strip():
             return float(result.stdout.strip())
     except:
@@ -225,7 +256,8 @@ def remove_all_subtitles():
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    **_no_console_subprocess_kwargs()
                 )
 
                 if result.returncode != 0:
@@ -347,7 +379,8 @@ def transform_2_mkv():
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                **_no_console_subprocess_kwargs()
             )
             
             # Read stderr line by line for progress
@@ -576,7 +609,8 @@ def mkv_embed_sub():
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                **_no_console_subprocess_kwargs()
             )
             
             # Capture all stderr output for error reporting
@@ -689,7 +723,8 @@ def mkv_2_8bitHEVC():
             result = subprocess.run(
                 check_cmd,
                 capture_output=True,
-                text=True
+                text=True,
+                **_no_console_subprocess_kwargs()
             )
             
             if result.returncode == 0:
@@ -735,7 +770,7 @@ def mkv_2_8bitHEVC():
         
         scale_filter = None
         try:
-            result = subprocess.run(res_cmd, capture_output=True, text=True)
+            result = subprocess.run(res_cmd, capture_output=True, text=True, **_no_console_subprocess_kwargs())
             if result.returncode == 0:
                 width, height = map(int, result.stdout.strip().split(','))
                 print(f"  📐 Current resolution: {width}x{height}")
@@ -778,7 +813,8 @@ def mkv_2_8bitHEVC():
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                **_no_console_subprocess_kwargs()
             )
             
             # Read stderr line by line for progress
@@ -876,7 +912,8 @@ def mkv_check_lang():
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True
+                text=True,
+                **_no_console_subprocess_kwargs()
             )
             
             if result.returncode != 0:
@@ -897,7 +934,7 @@ def mkv_check_lang():
                 total_subs_found += len(subtitle_streams)
                 print(f"  📝 Found {len(subtitle_streams)} subtitle stream(s):")
                 for idx, stream in enumerate(subtitle_streams):
-                    lang = stream.get('tags', {}).get('language', 'und')
+                    lang = normalize_stream_language(stream.get('tags', {}).get('language', 'und'))
                     codec = stream.get('codec_name', 'unknown')
                     title = stream.get('tags', {}).get('title', '')
                     info = f"    [{idx}] Language: {lang}, Codec: {codec}"

@@ -17,6 +17,19 @@ from pymediainfo import MediaInfo
 from concurrent.futures import ThreadPoolExecutor
 from decorators.decorators import menu_tag
 
+
+def _no_console_subprocess_kwargs():
+    """Hide console windows for CLI tools when the app runs without a console."""
+    if os.name != 'nt':
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    return {
+        'startupinfo': startupinfo,
+        'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    }
+
 ISO6392_TO_ISO6393 = {
     "ar": "ara", "bg": "bul", "cs": "ces", "da": "dan", "de": "deu", 
     "el": "ell", "en": "eng", "es": "spa", "et": "est", "fi": "fin",
@@ -27,6 +40,103 @@ ISO6392_TO_ISO6393 = {
     "te": "tel", "th": "tha", "tr": "tur", "uk": "ukr", "vi": "vie",
     "zh": "zho"
 }
+
+LANG_NAME_TO_ISO6393 = {
+    "arabic": "ara",
+    "bulgarian": "bul",
+    "chinese": "zho",
+    "czech": "ces",
+    "danish": "dan",
+    "dutch": "nld",
+    "english": "eng",
+    "estonian": "est",
+    "finnish": "fin",
+    "french": "fra",
+    "german": "deu",
+    "greek": "ell",
+    "hebrew": "heb",
+    "hindi": "hin",
+    "hungarian": "hun",
+    "indonesian": "ind",
+    "italian": "ita",
+    "japanese": "jpn",
+    "korean": "kor",
+    "latvian": "lav",
+    "lithuanian": "lit",
+    "malay": "msa",
+    "nederlands": "nld",
+    "norwegian": "nor",
+    "polish": "pol",
+    "portuguese": "por",
+    "russian": "rus",
+    "slovak": "slk",
+    "slovenian": "slv",
+    "spanish": "spa",
+    "swedish": "swe",
+    "tamil": "tam",
+    "telugu": "tel",
+    "thai": "tha",
+    "turkish": "tur",
+    "ukrainian": "ukr",
+    "vietnamese": "vie",
+}
+
+LEGACY_ONE_LETTER_TO_ISO6393 = {
+    # Some files contain truncated tags such as "d" instead of "dut".
+    "d": "nld",
+    "e": "eng",
+    "f": "fra",
+    "g": "deu",
+    "n": "nld",
+    "s": "spa",
+}
+
+
+def normalize_track_language_to_iso6393(language):
+    """Normalize MediaInfo language values to ISO639-3 code."""
+    if not language:
+        return "und"
+
+    value = str(language).strip().lower()
+    if not value:
+        return "und"
+
+    # Handle malformed 1-letter tags from older mux outputs.
+    if len(value) == 1:
+        return LEGACY_ONE_LETTER_TO_ISO6393.get(value, "und")
+
+    # Common 2-letter ISO639-1
+    if len(value) == 2:
+        return ISO6392_TO_ISO6393.get(value, "und")
+
+    # Already an ISO639-3 code
+    if len(value) == 3 and value in ISO6392_TO_ISO6393.values():
+        return value
+
+    # Human-readable names
+    if value in LANG_NAME_TO_ISO6393:
+        return LANG_NAME_TO_ISO6393[value]
+
+    # Some tags include region/script variants like "en-US"
+    base = re.split(r"[-_\s]", value)[0]
+    if base != value:
+        return normalize_track_language_to_iso6393(base)
+
+    return "und"
+
+
+def unique_output_path(path):
+    """Return a non-conflicting output path by appending -2, -3, ... when needed."""
+    if not os.path.exists(path):
+        return path
+
+    root, ext = os.path.splitext(path)
+    index = 2
+    while True:
+        candidate = f"{root}-{index}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        index += 1
 
 def get_mkvextract_path():
     """Get mkvextract executable path from config or PATH"""
@@ -121,21 +231,24 @@ def extract_subtitles_from_mkv(mkv_file, output_dir, mkvextract_path):
 
     for track in info.tracks:
         if track.track_type == "Text":
-            lang_short2 = (track.language or "und")[:2]
-            lang_short3 = ISO6392_TO_ISO6393.get(lang_short2, "und")
+            lang_short3 = normalize_track_language_to_iso6393(track.language)
             if lang_short3 == "und":
-                log_error(f"⚠️ Unknown language: {track.language}")
-                continue
+                log_error(f"⚠️ Unknown language: {track.language} (using 'und')")
 
             track_id = track.track_id - 1
             base = os.path.splitext(os.path.basename(mkv_file))[0]
-            out_file = os.path.join(output_dir, f"{base}-{lang_short3}.srt")
+            preferred_out_file = os.path.join(output_dir, f"{base}-{lang_short3}.srt")
+            out_file = unique_output_path(preferred_out_file)
+
+            if out_file != preferred_out_file:
+                tb_update('tb_info', f"ℹ️ Duplicate language track, using: {os.path.basename(out_file)}", "normal")
 
             try:
                 with open(os.devnull, 'w') as devnull:
                     subprocess.run([mkvextract_path, "tracks", mkv_file,
                                     f"{track_id}:{out_file}"],
-                                   check=True, stdout=devnull, stderr=devnull)
+                                   check=True, stdout=devnull, stderr=devnull,
+                                   **_no_console_subprocess_kwargs())
                 tb_update('tb_info', f"✅ Extracted: {os.path.basename(out_file)}", "normal")
             except subprocess.CalledProcessError as e:
                 error_msg = f"⚠️ Failed to extract track {track_id}: {e}"
@@ -185,7 +298,7 @@ def convert_to_mkv_cli(input_file, output_file):
 
     print(f"🎬 Converting {input_file} → {output_file}")
     total = os.path.getsize(input_file)
-    proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, universal_newlines=True)
+    proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, universal_newlines=True, **_no_console_subprocess_kwargs())
     bar = tqdm(total=total, unit="B", unit_scale=True, desc="Converting")
 
     for line in proc.stderr:

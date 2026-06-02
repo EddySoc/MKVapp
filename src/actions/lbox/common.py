@@ -14,6 +14,7 @@
 import os
 import subprocess
 import platform
+import shutil
 from tkinter import messagebox
 from decorators.decorators import menu_tag
 
@@ -63,8 +64,8 @@ def windows_recycle(path):
             ("lpszProgressTitle", c_wchar_p)
         ]
     
-    # Path must be double-null terminated
-    path_normalized = os.path.abspath(path) + '\0'
+    # SHFileOperation expects an absolute path list terminated by two NUL chars.
+    path_normalized = os.path.normpath(os.path.abspath(path)) + '\0\0'
     
     fileop = SHFILEOPSTRUCT()
     fileop.hwnd = None
@@ -79,6 +80,14 @@ def windows_recycle(path):
     result = windll.shell32.SHFileOperationW(byref(fileop))
     if result != 0:
         raise RuntimeError(f"SHFileOperation failed with code {result}")
+
+
+def _delete_path_permanently(path):
+    """Delete either a file or directory when recycle-bin fallbacks are unavailable."""
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
 
 
 @menu_tag(label="Select All",icon="☑️",group=["lbox"])
@@ -172,7 +181,7 @@ def delete_selected_files():
                         update_tbinfo(f"⚠️ Windows recycle failed: {e}", "geel")
                 
                 # Last resort: permanent deletion
-                os.remove(path)
+                _delete_path_permanently(path)
                 update_tbinfo(f"🗑️ Permanently deleted: {os.path.basename(path)}", "geel")
             else:
                 update_tbinfo(f"❓ File not found: {path}", "rood")

@@ -38,6 +38,24 @@ COLUMNS=[
  "audio_tracks","audio_codecs","audio_languages","subtitle_tracks","subtitle_languages"
 ]
 
+LEGACY_ONE_LETTER_LANG = {
+    "d": "dut",
+    "e": "eng",
+    "f": "fre",
+    "g": "ger",
+    "n": "nld",
+    "s": "spa",
+}
+
+
+def normalize_stream_language(lang):
+    if not lang:
+        return "und"
+    value = str(lang).strip().lower()
+    if len(value) == 1:
+        return LEGACY_ONE_LETTER_LANG.get(value, value)
+    return value
+
 def run_ffprobe(path):
     ffprobe_cmd = get_ffprobe_cmd()
     cmd=[ffprobe_cmd,"-v","error","-print_format","json","-show_format","-show_streams",path]
@@ -112,7 +130,7 @@ def parse_info(path,data):
     # Audio languages
     audio_langs = set()
     for aud in a:
-        lang = aud.get("tags", {}).get("language")
+        lang = normalize_stream_language(aud.get("tags", {}).get("language"))
         if lang:
             audio_langs.add(lang)
     row["audio_languages"] = ",".join(sorted(audio_langs))
@@ -120,9 +138,7 @@ def parse_info(path,data):
     # Subtitle languages
     langs=set()
     for sub in s:
-        lang=sub.get("tags",{}).get("language")
-        if not lang:
-            lang="und"   # undefined
+        lang = normalize_stream_language(sub.get("tags", {}).get("language"))
         langs.add(lang)
 
     row["subtitle_languages"]=",".join(sorted(langs)) 

@@ -15,10 +15,24 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from decorators.decorators import menu_tag
 from utils.text_helpers import tb_update
 from tkinter import filedialog
 from config.smart_config_manager import get_config_manager
+
+
+def _no_console_subprocess_kwargs():
+    """Hide console windows for CLI tools when the app runs without a console."""
+    if os.name != 'nt':
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    return {
+        'startupinfo': startupinfo,
+        'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    }
 
 def runCmd(cmd, description=""):
     """Execute a shell command and return the result"""
@@ -29,7 +43,8 @@ def runCmd(cmd, description=""):
             capture_output=True, 
             text=True,
             encoding='utf-8',
-            errors='replace'
+            errors='replace',
+            **_no_console_subprocess_kwargs()
         )
         if result.returncode != 0 and result.stderr:
             print(f"⚠️ Command error ({description}): {result.stderr}")
@@ -37,6 +52,42 @@ def runCmd(cmd, description=""):
     except Exception as e:
         print(f"❌ Command failed ({description}): {e}")
         return None
+
+
+def _resolve_python_command():
+    """Return a Python command that stays outside the packaged app executable."""
+    if not getattr(sys, 'frozen', False):
+        return [sys.executable]
+
+    exe_dir = os.path.dirname(sys.executable)
+    candidates = []
+
+    if os.name == 'nt':
+        candidates.extend([
+            os.path.join(exe_dir, '.venv', 'Scripts', 'python.exe'),
+            os.path.join(exe_dir, 'python.exe'),
+            os.path.join(os.path.dirname(exe_dir), '.venv', 'Scripts', 'python.exe'),
+        ])
+    else:
+        candidates.extend([
+            os.path.join(exe_dir, '.venv', 'bin', 'python'),
+            os.path.join(exe_dir, 'python'),
+            os.path.join(os.path.dirname(exe_dir), '.venv', 'bin', 'python'),
+        ])
+
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return [candidate]
+
+    py_launcher = shutil.which('py') if os.name == 'nt' else None
+    if py_launcher:
+        return [py_launcher, '-3']
+
+    python_cmd = shutil.which('python3') or shutil.which('python')
+    if python_cmd:
+        return [python_cmd]
+
+    raise FileNotFoundError('Geen losse Python-interpreter gevonden voor ffsubsync.')
 
 @menu_tag(label="Show SRT File", group="subtitles")
 def show_srt_file():
@@ -535,15 +586,11 @@ def sub_sync():
         if status_slot:
             s.app.after(0, lambda: status_slot.show_progress(mode="indeterminate"))
 
-        import subprocess, sys as _sys, re as _re
+        import subprocess, re as _re
         from utils.shared_utils import fils
         from utils.scan_helpers import reload
 
-        # Use ffsubsync from venv Scripts dir so it works without PATH activation
-        _scripts = os.path.dirname(_sys.executable)
-        _ffsubsync = os.path.join(_scripts, "ffsubsync.exe" if os.name == 'nt' else "ffsubsync")
-        if not os.path.exists(_ffsubsync):
-            _ffsubsync = "ffsubsync"  # fallback to PATH
+        python_cmd = _resolve_python_command()
 
         _known_suffixes = r'(\.(en|nl|fr|de|es|it|pt|ja|zh|und|eng|dut|fre|ger|spa|ita|por|sync|tmp))+$'
 
@@ -565,11 +612,11 @@ def sub_sync():
                 "normal"))
             try:
                 # ffsubsync.exe has a DLL issue on this system — invoke via Python import instead
-                cmd = [
-                    _sys.executable, "-c",
+                cmd = python_cmd + [
+                    "-c",
                     f"import sys; sys.argv=['ffsubsync',{repr(video_file)},'-i',{repr(srt_file)},'-o',{repr(synchronized_srt)}]; from ffsubsync.ffsubsync import main; main()"
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', **_no_console_subprocess_kwargs())
                 if result.returncode == 0:
                     s.app.after(0, lambda out=synchronized_srt: tb_update(
                         'tb_info', f"✅ Synchronized: {os.path.basename(out)}", "groen"))
@@ -675,7 +722,7 @@ def sub_all_extract(fil):
 
 def get_num_subs(fil):
     out = subprocess.run(['ffprobe','-loglevel','error','-select_streams','s','-show_entries','stream=index:stream_tags=language','-of','csv=p=0', fil],\
-             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, **_no_console_subprocess_kwargs())
     subs=out.stdout
     subs_list = subs.split("\n")
 

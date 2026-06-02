@@ -1,5 +1,5 @@
 metadata:
-  generated_at: '2026-02-23T15:26:24.016010'
+  generated_at: '2026-06-02T08:26:10.712145'
   source: menu_registry
   version: 2.0.0
 Menus:
@@ -33,6 +33,8 @@ Menus:
     icon: 🔽
   - label: Extract Subs
     action: extract_subtitles
+  - label: Speech to SRT (Whisper)
+    action: speech_to_srt
   subtitles:
   - label: Show SRT File
     action: show_srt_file
@@ -76,6 +78,12 @@ Menus:
     icon: 📋
   - label: Check Config
     action: show_config_popup
+    icon: 🔍
+  - label: Bindings Dashboard
+    action: launch_debug_tools
+    icon: 🔗
+  - label: Inspect SharedState
+    action: show_sharedstate_inpector
     icon: 🔍
   tb_folders:
   - label: 🔄 Refresh

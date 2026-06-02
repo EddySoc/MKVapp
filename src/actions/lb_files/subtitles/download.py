@@ -16,6 +16,19 @@ import requests
 import subprocess
 from decorators.decorators import menu_tag
 
+
+def _no_console_subprocess_kwargs():
+    """Hide console windows for CLI tools when the app runs without a console."""
+    if os.name != 'nt':
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    return {
+        'startupinfo': startupinfo,
+        'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    }
+
 def get_opensub_api_key():
     return config.get("opensubtitles", {}).get("api_key")
 
@@ -120,7 +133,7 @@ def _download_with_filebot(video_path, lang_code2):
             "filebot", "-get-subtitles", video_path,
             "--lang", lang_code2,
             "--output", "srt", "--encoding", "UTF-8"
-        ], capture_output=True, text=True)
+        ], capture_output=True, text=True, **_no_console_subprocess_kwargs())
 
         print(result.stdout.strip() or result.stderr.strip())
 
