@@ -24,3 +24,14 @@ Desktop.ini
 .env
 config_backup.json
 src/Settings/API_cfg.local.json
+
+# Added by Git Quick Push
+*.py[cod]
+.venv/
+build/
+dist/
+*.spec
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
