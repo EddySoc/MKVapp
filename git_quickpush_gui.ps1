@@ -110,6 +110,52 @@ function Handle-PushFailure {
     Write-Log "`nPush mislukt! Controleer remote URL, branch en rechten." ([System.Drawing.Color]::Salmon)
 }
 
+function Test-FetchFirstFailure {
+    $outputText = ($script:LastGitOutput | ForEach-Object { [string]$_ }) -join "`n"
+    return ($outputText -match "fetch first|remote contains work that you do not have locally|non-fast-forward")
+}
+
+function Sync-WithRemoteAndRetryPush {
+    param(
+        [string]$RepoPath,
+        [string]$OriginUrl,
+        [string]$PushBranch,
+        [bool]$ForcePush
+    )
+
+    Write-Log "`nRemote heeft al commits. We halen die eerst binnen en proberen daarna opnieuw te pushen..." ([System.Drawing.Color]::Khaki)
+    Write-Log "Dit kan README/LICENSE of andere startbestanden van GitHub samengevoegd laten worden." ([System.Drawing.Color]::Khaki)
+
+    $pullResult = & git -C $RepoPath pull --no-rebase --allow-unrelated-histories origin $PushBranch 2>&1
+    $script:LastGitOutput = @($pullResult)
+    foreach ($line in $pullResult) {
+        $color = if ($line -match '^error:|^fatal:') { [System.Drawing.Color]::Salmon }
+                 elseif ($line -match '^hint:') { [System.Drawing.Color]::SkyBlue }
+                 else { [System.Drawing.Color]::LightGray }
+        Write-Log "  $line" $color
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "`nGit pull is mislukt. Je moet de remote inhoud mogelijk handmatig samenvoegen." ([System.Drawing.Color]::Salmon)
+        return $false
+    }
+
+    Write-Log "`nOpnieuw pushen..." ([System.Drawing.Color]::Cyan)
+    if ($ForcePush) {
+        $retryExit = Invoke-Git -GitArgs @("push", "--force", "-u", "origin", $PushBranch)
+    } else {
+        $retryExit = Invoke-Git -GitArgs @("push", "-u", "origin", $PushBranch)
+    }
+
+    if ($retryExit -ne 0) {
+        Handle-PushFailure -OriginUrl $OriginUrl
+        return $false
+    }
+
+    Write-Log "`nKlaar! Je wijzigingen staan nu op GitHub." ([System.Drawing.Color]::LightGreen)
+    return $true
+}
+
 function Get-GitRepoRoot {
     param([string]$StartPath)
 
@@ -586,7 +632,13 @@ $btnPush.Add_Click({
                 }
 
                 if ($exitCode -ne 0) {
-                    Handle-PushFailure -OriginUrl $originUrl
+                    if (Test-FetchFirstFailure) {
+                        if (-not (Sync-WithRemoteAndRetryPush -RepoPath $repoRoot -OriginUrl $originUrl -PushBranch $pushBranch -ForcePush:$forcePush)) {
+                            return
+                        }
+                    } else {
+                        Handle-PushFailure -OriginUrl $originUrl
+                    }
                 } else {
                     Write-Log "`nKlaar! Bestaande commit(s) staan nu op GitHub." ([System.Drawing.Color]::LightGreen)
                     $txtMsg.Clear()
@@ -648,7 +700,13 @@ $btnPush.Add_Click({
             }
 
             if ($exitCode -ne 0) {
-                Handle-PushFailure -OriginUrl $originUrl
+                if (Test-FetchFirstFailure) {
+                    if (-not (Sync-WithRemoteAndRetryPush -RepoPath $repoRoot -OriginUrl $originUrl -PushBranch $pushBranch -ForcePush:$forcePush)) {
+                        return
+                    }
+                } else {
+                    Handle-PushFailure -OriginUrl $originUrl
+                }
             } else {
                 Write-Log "`nKlaar! Je wijzigingen staan nu op GitHub." ([System.Drawing.Color]::LightGreen)
                 $txtMsg.Clear()
