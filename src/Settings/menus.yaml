@@ -1,5 +1,5 @@
 metadata:
-  generated_at: '2026-06-04T13:44:47.836225'
+  generated_at: '2026-06-04T14:37:56.548767'
   source: menu_registry
   version: 2.0.0
 Menus:
@@ -41,6 +41,13 @@ Menus:
     action: check_language
   - label: Translate
     action: sub_translate
+  batch:
+  - label: Run Batch
+    action: run_batch
+    icon: ⚙️
+  - label: Stop Batch
+    action: stop_batch
+    icon: ⏹️
   help:
   - label: Show Help
     action: show_help_dialog

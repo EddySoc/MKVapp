@@ -37,7 +37,7 @@ MENU_COMPOSITIONS = {
     "tb_debug": ["__title__", "__sep__", "tb_debug", "__sep__", "tools", "tbox", "help"],
     "tb_settings": ["__title__", "__sep__", "tb_settings", "__sep__", "tbox", "help"],
     # For lb_files we use dynamic filtering based on current mode (Videos/Subtitles/All)
-    "lb_files": ["__title__", "__sep__", "__dynamic_filter__", "lbox", "help"],
+    "lb_files": ["__title__", "__sep__", "__dynamic_filter__", "batch", "__sep__", "lbox", "help"],
 
     # Add more popup_keys here as needed
 }

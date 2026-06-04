@@ -72,6 +72,11 @@ class SharedState:
         self.subs_lst: list = []
         self.upd_lst: list = []
 
+        # Batch queue: ordered list of action labels to execute in sequence
+        self.batch_queue: list = []
+        # True = batch step done/idle, False = async action still running
+        self.batch_step_done: bool = True
+
     def init_fonts(self):
         family = self.config_mgr.get("persistent_cfg", "Font_family", "Arial")
         size = int(self.config_mgr.get("persistent_cfg", "Font_size", 12))
