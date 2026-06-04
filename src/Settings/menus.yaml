@@ -1,15 +1,8 @@
 metadata:
-  generated_at: '2026-06-02T08:26:10.712145'
+  generated_at: '2026-06-04T13:44:47.836225'
   source: menu_registry
   version: 2.0.0
 Menus:
-  tb_info:
-  - label: DiskInfo
-    action: diskinfo
-    icon: 🔍
-  - label: Disk InfoBar
-    action: show_disk_info
-    icon: 🔍
   videos:
   - label: Play Video
     action: play_video

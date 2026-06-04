@@ -1,6 +1,6 @@
 {
   "BaseDir": "C:/QBMedia",
-  "source": "C:\\QBMedia\\Media\\Series\\Sheriff Country\\S01\\",
+  "source": "C:/QBMedia/Downloads",
   "target": "C:\\QBMedia\\Done\\",
   "backup": "C:/QBMedia",
   "Min_Freespace": 100,

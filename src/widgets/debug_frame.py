@@ -10,7 +10,7 @@
 #-------------------------------------------------------------------------------
 
 import customtkinter as ctk
-import actions.tests.test as actions_test
+import actions.tb_debug.debug_control as actions_test
 import inspect
 import ast
 import utils.text_helpers as utils
