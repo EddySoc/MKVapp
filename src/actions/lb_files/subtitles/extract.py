@@ -12,6 +12,7 @@
 # popup_actions/actions_extract.py
 
 import os, sys, shutil, subprocess, re
+from pathlib import Path
 from tqdm import tqdm
 from pymediainfo import MediaInfo
 from concurrent.futures import ThreadPoolExecutor
@@ -138,6 +139,19 @@ def unique_output_path(path):
             return candidate
         index += 1
 
+
+def _resolve_tools_cfg_path():
+    """Find tools_cfg.json regardless of whether app starts from repo root or src."""
+    candidates = [
+        Path.cwd() / "Settings" / "tools_cfg.json",
+        Path.cwd() / "src" / "Settings" / "tools_cfg.json",
+        Path(__file__).resolve().parents[3] / "Settings" / "tools_cfg.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
 def get_mkvextract_path():
     """Get mkvextract executable path from config or PATH"""
     import json
@@ -148,9 +162,9 @@ def get_mkvextract_path():
     
     # Check config file for custom path
     try:
-        config_path = os.path.join("Settings", "tools_cfg.json")
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
+        config_path = _resolve_tools_cfg_path()
+        if config_path and config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 mkvtoolnix_path = config.get("mkvtoolnix_path", "")
                 
