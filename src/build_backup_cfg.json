@@ -1,0 +1,25 @@
+{
+    "combined_tool": {
+        "project_dir": "C:/Python_W_new/MKV_App/src",
+        "entry_script": "C:/Python_W_new/MKV_App/src/app_launcher.py",
+        "app_name": "MKV App",
+        "build_mode": "Onedir",
+        "windowed": true,
+        "spec_file": "C:/Python_W_new/MKV_App/src\\MKV App.onedir.spec",
+        "build_type": "Onedir",
+        "output_dir": "C:/Python_W_new/Builds/MKVapp",
+        "clean_build": true,
+        "console_mode": false,
+        "upx_compression": false,
+        "icon_path": "C:/Python_W_new/MKV_App/icons/CTk_icon.ico",
+        "python_exe": "C:/Python_W_new/MKV_App/src/.venv/Scripts/python.exe",
+        "change_description": "test"
+    },
+    "backup_tab": {
+        "backup_dir": "C:/Python_W_new/Backups/MKVapp",
+        "include_venv": false,
+        "include_pycache": false,
+        "include_builds": false,
+        "backup_after_build": true
+    }
+}

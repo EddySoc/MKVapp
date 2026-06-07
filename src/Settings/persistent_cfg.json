@@ -1,6 +1,6 @@
 {
   "BaseDir": "C:/QBMedia",
-  "source": "C:/QBMedia/Downloads",
+  "source": "C:\\QBMedia\\Downloads\\S01\\",
   "target": "C:\\QBMedia\\Done\\",
   "backup": "C:/QBMedia",
   "Min_Freespace": 100,
