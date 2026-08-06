@@ -1,6 +1,7 @@
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
 
@@ -47,6 +48,55 @@ class NormalizeTrackLanguageTests(unittest.TestCase):
 
     def test_maps_language_name(self):
         self.assertEqual(module.normalize_track_language_to_iso6393('dutch'), 'nld')
+
+
+class DetectPreferredSubtitleLanguageTests(unittest.TestCase):
+    def test_prefers_dutch_over_other_candidates(self):
+        class FakeLang:
+            def __init__(self, lang, prob):
+                self.lang = lang
+                self.prob = prob
+
+        with patch.object(module, 'detect_langs', return_value=[FakeLang('en', 0.51), FakeLang('nl', 0.49)]):
+            result = module.detect_preferred_subtitle_language_from_text(
+                'Dit is een voorbeeldzin die lang genoeg is om te detecteren.'
+            )
+            self.assertEqual(result, 'nld')
+
+    def test_ignores_languages_outside_preferred_set(self):
+        class FakeLang:
+            def __init__(self, lang, prob):
+                self.lang = lang
+                self.prob = prob
+
+        with patch.object(module, 'detect_langs', return_value=[FakeLang('de', 0.95)]):
+            result = module.detect_preferred_subtitle_language_from_text(
+                'Dit is een voorbeeldzin die lang genoeg is om te detecteren.'
+            )
+            self.assertEqual(result, 'und')
+
+
+class PreferredSubtitleSelectionTests(unittest.TestCase):
+    def test_keeps_first_preferred_language_only_once(self):
+        seen = set()
+        allowed = {"eng", "nld", "fra", "spa"}
+
+        self.assertTrue(module.should_keep_subtitle_language('eng', seen, allowed))
+        self.assertFalse(module.should_keep_subtitle_language('eng', seen, allowed))
+
+    def test_rejects_languages_outside_preferred_set(self):
+        seen = set()
+        allowed = {"eng", "nld", "fra", "spa"}
+
+        self.assertFalse(module.should_keep_subtitle_language('deu', seen, allowed))
+        self.assertFalse(module.should_keep_subtitle_language('und', seen, allowed))
+
+    def test_allowed_languages_can_be_limited_by_selection(self):
+        seen = set()
+        allowed = {"eng", "nld"}
+
+        self.assertTrue(module.should_keep_subtitle_language('eng', seen, allowed))
+        self.assertFalse(module.should_keep_subtitle_language('fra', seen, allowed))
 
 
 if __name__ == '__main__':

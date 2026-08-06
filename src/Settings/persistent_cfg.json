@@ -1,6 +1,6 @@
 {
   "BaseDir": "C:/QBMedia",
-  "source": "C:\\QBMedia\\Downloads\\S01\\",
+  "source": "C:/QBMedia/Downloads\\",
   "target": "C:\\QBMedia\\Done\\",
   "backup": "C:/QBMedia",
   "Min_Freespace": 100,
@@ -15,5 +15,11 @@
   "Font_size": "12",
   "Inc_subdirs": true,
   "SubtitleMethod": "filebot",
-  "Max_Resolution": "1080p"
+  "Max_Resolution": "1080p",
+  "Extract_Languages": [
+    "eng",
+    "nld",
+    "fra",
+    "spa"
+  ]
 }

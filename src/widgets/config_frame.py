@@ -74,6 +74,13 @@ class Config_Frame(ct.CTkFrame):
         self.color_schemes = self.appear.get("color_schemes", [])
         self.font_styles = self.appear.get("font_styles", [])
         self.max_resolutions = ["720p", "1080p", "1440p", "2160p"]
+        self.extract_lang_options = [
+            ("English", "eng"),
+            ("Dutch", "nld"),
+            ("French", "fra"),
+            ("Spanish", "spa"),
+        ]
+        self.extract_lang_labels = {code: label for label, code in self.extract_lang_options}
 
     def _create_vars(self):
         self.family_var = ct.StringVar(value=self.cfg.get("Font_family", self._first(self.font_families)))
@@ -85,6 +92,12 @@ class Config_Frame(ct.CTkFrame):
         self.freespace_var = ct.StringVar(value=str(self.cfg.get("Min_Freespace", self._first(self.freespaces))))
         self.method_var = ct.StringVar(value=self.cfg.get("SubtitleMethod", "api"))
         self.max_resolution_var = ct.StringVar(value=self.cfg.get("Max_Resolution", "1080p"))
+        selected_extract_langs = self.cfg.get("Extract_Languages", ["eng", "nld", "fra", "spa"])
+        if isinstance(selected_extract_langs, str):
+            selected_extract_langs = [item.strip() for item in selected_extract_langs.split(",") if item.strip()]
+        self.extract_language_vars = {}
+        for _, code in self.extract_lang_options:
+            self.extract_language_vars[code] = ct.BooleanVar(value=code in selected_extract_langs)
         
         # Tool paths
         ffmpeg_path = self.tools_cfg.get("ffmpeg_path", "")
@@ -124,9 +137,12 @@ class Config_Frame(ct.CTkFrame):
         
         ct.CTkLabel(self, text="").grid(row=15, column=0, columnspan=2)
 
+        self._build_subtitle_extract_languages(start_row=16)
+        ct.CTkLabel(self, text="").grid(row=17, column=0, columnspan=2)
+
         # Voeg BaseDir widget toe vóór de externe tools
-        self._build_basedir_row(row=16)
-        self._build_tool_paths_section(start_row=17)
+        self._build_basedir_row(row=18)
+        self._build_tool_paths_section(start_row=19)
 
     def _build_basedir_row(self, row):
         import os, json, sys
@@ -246,6 +262,84 @@ class Config_Frame(ct.CTkFrame):
             self, text="OpenSubtitles API", variable=self.method_var,
             value="api", command=save_method
         ).grid(row=start_row + 1, column=1, sticky="w", padx=5)
+
+    def _build_subtitle_extract_languages(self, start_row):
+        self.extract_languages_button = ct.CTkButton(
+            self,
+            text="Subtitle Extraction",
+            command=self._open_extract_language_selector,
+        )
+        self.extract_languages_button.grid(row=start_row, column=0, columnspan=2, sticky="ew", padx=5, pady=(10, 5))
+
+        self._sync_extract_language_selection()
+
+    def _extract_languages_button_text(self):
+        return "Subtitle Extraction"
+
+    def _format_extract_languages(self, selected_codes):
+        labels = [self.extract_lang_labels.get(code, code.upper()) for code in selected_codes if code in self.extract_lang_labels]
+        return ", ".join(labels) if labels else "None selected"
+
+    def _sync_extract_language_selection(self):
+        from utils import log_settings
+
+        selected = [code for code, var in self.extract_language_vars.items() if var.get()]
+        if not selected:
+            selected = ["eng", "nld", "fra", "spa"]
+            for code in selected:
+                self.extract_language_vars[code].set(True)
+
+        self.cfg["Extract_Languages"] = selected
+        if hasattr(self, "extract_languages_button"):
+            self.extract_languages_button.configure(text=self._extract_languages_button_text())
+        log_settings(f"✅ Subtitle extract languages: {', '.join(selected)}")
+
+    def _open_extract_language_selector(self):
+        if getattr(self, "extract_languages_popup", None) and self.extract_languages_popup.winfo_exists():
+            self.extract_languages_popup.lift()
+            self.extract_languages_popup.focus_force()
+            return
+
+        popup = ct.CTkToplevel(self)
+        self.extract_languages_popup = popup
+        popup.title("Subtitle extraction languages")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+
+        try:
+            x = self.winfo_rootx() + 40
+            y = self.winfo_rooty() + 320
+            popup.geometry(f"320x220+{x}+{y}")
+        except Exception:
+            popup.geometry("320x220")
+
+        popup.grid_columnconfigure(0, weight=1)
+
+        ct.CTkLabel(popup, text="Extract subtitles for these languages", font=("Arial", 12, "bold")).grid(
+            row=0, column=0, padx=12, pady=(12, 4), sticky="w"
+        )
+        ct.CTkLabel(
+            popup,
+            text="Choose one or more languages.\nThe list below stays in sync with the selection.",
+            justify="left",
+            anchor="w",
+            wraplength=280,
+        ).grid(
+            row=1, column=0, padx=12, pady=(0, 10), sticky="w"
+        )
+
+        options_frame = ct.CTkScrollableFrame(popup, width=280, height=110)
+        options_frame.grid(row=2, column=0, padx=12, pady=4, sticky="nsew")
+
+        for label, code in self.extract_lang_options:
+            ct.CTkCheckBox(
+                options_frame,
+                text=label,
+                variable=self.extract_language_vars[code],
+                command=self._sync_extract_language_selection,
+            ).pack(anchor="w", padx=4, pady=4)
+
+        ct.CTkButton(popup, text="Done", command=popup.destroy).grid(row=3, column=0, padx=12, pady=(10, 12), sticky="ew")
     
     def _build_tool_paths_section(self, start_row):
         """Build the external tools configuration section"""
